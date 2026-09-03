@@ -17,7 +17,13 @@ final class CricketStore: ObservableObject {
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var dataSource: String = ""
 
-    private init() {}
+    private(set) var cachedFeed: FirebaseOTTFeed?
+    private var lastRefreshAt: Date?
+    private var liveFeedPollTask: Task<Void, Never>?
+
+    private init() {
+        loadCachedIfNeeded()
+    }
 
     var liveMatches: [FeaturedMatch] {
         featuredMatches.filter(\.isLive)
@@ -35,7 +41,32 @@ final class CricketStore: ObservableObject {
             guard let match = tournament.matches.first(where: { $0.matchId == id }) else { continue }
             return MatchMapper.featured(match: match, tournament: tournament)
         }
+        if let schedule = scheduleMatches.first(where: { $0.id == id }) {
+            return featured(from: schedule)
+        }
         return nil
+    }
+
+    func featured(from schedule: ScheduleMatch) -> FeaturedMatch {
+        featuredMatches.first(where: { $0.id == schedule.id })
+            ?? FeaturedMatch(
+                id: schedule.id,
+                league: schedule.tournament,
+                year: "2026",
+                home: schedule.homeName,
+                away: schedule.awayName,
+                timeLabel: schedule.timeLabel,
+                imageName: "HeroMatch",
+                isLive: schedule.status == .live,
+                homeShort: schedule.homeCode,
+                awayShort: schedule.awayCode,
+                imageURL: schedule.thumbnailURL,
+                homeLogoURL: schedule.homeLogoURL,
+                awayLogoURL: schedule.awayLogoURL,
+                tournamentLogoURL: schedule.tournamentLogoURL,
+                scoreLabel: schedule.scoreLabel ?? "",
+                matchSeq: schedule.matchSeq
+            )
     }
 
     var tournamentHighlightRails: [TournamentHighlightRail] {
@@ -96,7 +127,22 @@ final class CricketStore: ObservableObject {
         return rails
     }
 
-    func refresh() async {
+    func loadCachedIfNeeded() {
+        guard featuredMatches.isEmpty, scheduleMatches.isEmpty else { return }
+        guard let data = FeedCache.loadData() else { return }
+        guard let feed = try? JSONDecoder().decode(FirebaseOTTFeed.self, from: data) else { return }
+        cachedFeed = feed
+        ingest(feed: feed, source: "Cache", updatedAt: FeedCache.modifiedAt())
+    }
+
+    func refresh(force: Bool = false) async {
+        if !force,
+           let lastRefreshAt,
+           Date().timeIntervalSince(lastRefreshAt) < 25,
+           !featuredMatches.isEmpty || !scheduleMatches.isEmpty {
+            return
+        }
+
         let hadData = !featuredMatches.isEmpty || !scheduleMatches.isEmpty
         isLoading = true
         if !hadData {
@@ -105,44 +151,77 @@ final class CricketStore: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let feed = try await FirebaseOTTClient.fetchFeed()
-            let apiTournaments = FirebaseOTTClient.toAPITournaments(feed)
-            if apiTournaments.isEmpty {
-                tournaments = []
-                featuredMatches = []
-                scheduleMatches = []
-                tournamentCards = []
-                highlightClips = []
-                shortClips = []
-                errorMessage = "Firebase empty — Admin app se tournament ON karo"
-            } else {
-                let cleaned = Self.sanitize(apiTournaments)
-                if cleaned.isEmpty {
-                    tournaments = []
-                    featuredMatches = []
-                    scheduleMatches = []
-                    tournamentCards = []
-                    errorMessage = "Firebase me show karne layak tournament nahi mila"
-                } else {
-                    var enriched = cleaned
-                    Self.mergeHighlightURLs(feed: feed, tournaments: &enriched)
-                    tournaments = enriched
-                    let slides = apply(enriched)
-                    await HeroFrameCache.shared.preload(matches: slides)
-                    featuredMatches = slides
-                    dataSource = "Firebase"
-                    lastUpdated = Date()
-                }
-            }
-            highlightClips = FirebaseOTTClient.toAPIHighlights(feed)
-                .map(Self.mapHighlight)
-                .map { Self.enrichHighlight($0, tournaments: tournaments) }
-            shortClips = FirebaseOTTClient.toShortClips(feed)
+            let (feed, data) = try await FirebaseOTTClient.fetchFeedWithData()
+            FeedCache.save(data)
+            cachedFeed = feed
+            ingest(feed: feed, source: "Firebase", updatedAt: Date())
+            lastRefreshAt = Date()
         } catch is CancellationError {
             return
         } catch {
             if !hadData && tournaments.isEmpty && featuredMatches.isEmpty {
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func ingest(feed: FirebaseOTTFeed, source: String, updatedAt: Date? = nil) {
+        let apiTournaments = FirebaseOTTClient.toAPITournaments(feed)
+        if apiTournaments.isEmpty {
+            tournaments = []
+            featuredMatches = []
+            scheduleMatches = []
+            tournamentCards = []
+            highlightClips = []
+            shortClips = []
+            if source != "Cache" {
+                errorMessage = "Firebase empty — Admin app se tournament ON karo"
+            }
+            return
+        }
+
+        let cleaned = Self.sanitize(apiTournaments)
+        if cleaned.isEmpty {
+            tournaments = []
+            featuredMatches = []
+            scheduleMatches = []
+            tournamentCards = []
+            if source != "Cache" {
+                errorMessage = "Firebase me show karne layak tournament nahi mila"
+            }
+            return
+        }
+
+        var enriched = cleaned
+        Self.mergeHighlightURLs(feed: feed, tournaments: &enriched)
+        tournaments = enriched
+        let slides = apply(enriched)
+        featuredMatches = slides
+        dataSource = source
+        lastUpdated = updatedAt ?? Date()
+        errorMessage = nil
+
+        let slidesForPreload = slides
+        Task {
+            await HeroFrameCache.shared.preload(matches: slidesForPreload)
+        }
+
+        highlightClips = FirebaseOTTClient.toAPIHighlights(feed)
+            .map(Self.mapHighlight)
+            .map { Self.enrichHighlight($0, tournaments: tournaments) }
+        shortClips = FirebaseOTTClient.toShortClips(feed)
+        updateLiveFeedPolling()
+    }
+
+    private func updateLiveFeedPolling() {
+        liveFeedPollTask?.cancel()
+        guard !liveMatches.isEmpty else { return }
+        liveFeedPollTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                guard !Task.isCancelled else { return }
+                guard !liveMatches.isEmpty else { return }
+                await refresh(force: true)
             }
         }
     }

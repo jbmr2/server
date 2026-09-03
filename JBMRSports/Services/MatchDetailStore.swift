@@ -7,7 +7,9 @@ final class MatchDetailStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var detail: MatchDetail?
 
-    func load(matchId: String, matchSeq: Int?) async {
+    private var livePollTask: Task<Void, Never>?
+
+    func load(matchId: String, matchSeq: Int?, feed: FirebaseOTTFeed?) async {
         let hadDetail = detail != nil
         isLoading = true
         if !hadDetail {
@@ -16,14 +18,23 @@ final class MatchDetailStore: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let feed = try await FirebaseOTTClient.fetchFeed()
+            let resolvedFeed: FirebaseOTTFeed
+            if let feed {
+                resolvedFeed = feed
+            } else if let data = FeedCache.loadData(),
+                      let cached = try? JSONDecoder().decode(FirebaseOTTFeed.self, from: data) {
+                resolvedFeed = cached
+            } else {
+                resolvedFeed = try await FirebaseOTTClient.fetchFeed()
+            }
+
             if let uploaded = try? await FirebaseOTTClient.fetchCompleteMatch(matchId: matchId) {
-                let pair = FirebaseOTTClient.findMatch(matchId: matchId, in: feed)
+                let pair = FirebaseOTTClient.findMatch(matchId: matchId, in: resolvedFeed)
                 detail = MatchDetailMapper.map(uploaded.mergingBallVideos(pair?.1.balls))
                 errorMessage = nil
                 return
             }
-            guard let pair = FirebaseOTTClient.findMatch(matchId: matchId, in: feed) else {
+            guard let pair = FirebaseOTTClient.findMatch(matchId: matchId, in: resolvedFeed) else {
                 if !hadDetail {
                     detail = nil
                     errorMessage = "Match Firebase mein nahi — Admin se tournament ON karo"
@@ -40,6 +51,36 @@ final class MatchDetailStore: ObservableObject {
                 errorMessage = "Match load nahi ho paya"
             }
         }
+    }
+
+    func startLivePolling(matchId: String, isLive: Bool, feedProvider: @escaping () -> FirebaseOTTFeed?) {
+        stopLivePolling()
+        guard isLive else { return }
+        livePollTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                guard !Task.isCancelled else { return }
+                await load(matchId: matchId, matchSeq: nil, feed: feedProvider())
+                if let status = detail?.status, !Self.isLiveStatus(status) {
+                    stopLivePolling()
+                    return
+                }
+            }
+        }
+    }
+
+    func stopLivePolling() {
+        livePollTask?.cancel()
+        livePollTask = nil
+    }
+
+    private static func isLiveStatus(_ status: String) -> Bool {
+        let s = status.lowercased()
+        return s == "live" || s == "in progress"
+    }
+
+    static func isLiveMatchStatus(_ status: String) -> Bool {
+        isLiveStatus(status)
     }
 }
 

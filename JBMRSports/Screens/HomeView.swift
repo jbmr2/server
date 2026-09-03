@@ -82,7 +82,7 @@ struct HomeView: View {
             }
             .padding(.bottom, 24)
         }
-        .refreshable { await store.refresh() }
+        .refreshable { await store.refresh(force: true) }
         .background(
             LinearGradient(
                 colors: [Theme.background, Theme.backgroundAlt],
@@ -120,10 +120,11 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Hero autoplay (5.5s — standard OTT hero timing)
+    // MARK: - Hero autoplay (5.5s static slides · 12s highlight preview)
 
     private enum HeroCarouselTiming {
         static let advanceInterval: Duration = .seconds(5.5)
+        static let highlightPreviewInterval: Duration = .seconds(12)
         static let pauseAfterSwipe: TimeInterval = 8
         static let transition: Animation = .easeInOut(duration: 0.45)
     }
@@ -134,7 +135,15 @@ struct HomeView: View {
 
     private func heroAutoplayLoop(generation: Int) async {
         while !Task.isCancelled {
-            try? await Task.sleep(for: HeroCarouselTiming.advanceInterval)
+            let sleepDuration = await MainActor.run { () -> Duration in
+                guard generation == heroAutoplayGeneration else { return HeroCarouselTiming.advanceInterval }
+                let current = featured.isEmpty ? nil : featured[min(page, featured.count - 1)]
+                return current?.isMatchHighlightSlide == true
+                    ? HeroCarouselTiming.highlightPreviewInterval
+                    : HeroCarouselTiming.advanceInterval
+            }
+
+            try? await Task.sleep(for: sleepDuration)
             guard !Task.isCancelled else { return }
 
             let shouldAdvance = await MainActor.run { () -> Bool in
@@ -164,8 +173,8 @@ struct HomeView: View {
 
     // MARK: - Hero carousel
 
-    private let heroCardHeight: CGFloat = 458
-    private let heroSlideHeight: CGFloat = 518
+    private let heroCardHeight: CGFloat = 488
+    private let heroSlideHeight: CGFloat = 548
 
     private var heroCarousel: some View {
         VStack(spacing: 0) {
@@ -185,18 +194,15 @@ struct HomeView: View {
                     TabView(selection: $page) {
                         ForEach(Array(featured.enumerated()), id: \.element.heroSlideKey) { index, match in
                             VStack(spacing: 0) {
-                                FigmaHeroCard(match: match) {
+                                FigmaHeroCard(match: match, isActive: page == index) {
                                     path.append(AppNavigationRoute.match(match.id))
                                 }
                                 .frame(width: cardWidth, height: heroCardHeight)
 
-                                HeroSlideColorLine(match: match)
-                                    .padding(.top, 4)
-
                                 FigmaHeroSlideCTA(match: match) {
                                     path.append(AppNavigationRoute.match(match.id))
                                 }
-                                .padding(.top, 6)
+                                .padding(.top, 10)
                             }
                             .frame(width: cardWidth)
                             .frame(maxWidth: .infinity)
@@ -452,19 +458,18 @@ struct MediaThumbCard: View {
 
 struct FigmaHeroCard: View {
     let match: FeaturedMatch
+    var isActive: Bool = false
     var onOpen: () -> Void
 
     private enum Typography {
-        static let teamSize: CGFloat = 17
-        static let vsSize: CGFloat = 11
-        static let leagueSize: CGFloat = 13
-        static let detailSize: CGFloat = 13
-        static let teamRowHeight: CGFloat = 40
+        static let leagueSize: CGFloat = 14
+        static let detailSize: CGFloat = 14
     }
 
-    private let cardHeight: CGFloat = 458
-    private let thumbHeight: CGFloat = 352
-    private let textHeight: CGFloat = 106
+    private let cardHeight: CGFloat = 488
+    private let thumbHeight: CGFloat = 350
+    private let textHeight: CGFloat = 138
+    private let highlightTextHeight: CGFloat = 138
 
     var body: some View {
         if match.isMatchHighlightSlide {
@@ -493,7 +498,7 @@ struct FigmaHeroCard: View {
 
     private var highlightCard: some View {
         VStack(spacing: 0) {
-            FigmaHeroHighlightThumbnail(match: match)
+            FigmaHeroHighlightThumbnail(match: match, isActive: isActive)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(height: thumbHeight)
                 .clipped()
@@ -509,7 +514,78 @@ struct FigmaHeroCard: View {
     }
 
     private var highlightTextBlock: some View {
-        heroTextBlock(resultText: highlightResultLabel.isEmpty ? scoreSummaryLabel : highlightResultLabel)
+        VStack(spacing: 0) {
+            stackedTeamNames(vsColor: HeroHighlightStyle.accent)
+
+            HeroHighlightMetaBar(meta: highlightMetaLine)
+                .padding(.top, 10)
+
+            if !highlightResultLabel.isEmpty {
+                Text(highlightResultLabel)
+                    .font(.system(size: Typography.detailSize, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
+            } else if !scoreSummaryLabel.isEmpty {
+                Text(scoreSummaryLabel)
+                    .font(.system(size: Typography.detailSize, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: highlightTextHeight, alignment: .top)
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
+    private var highlightMetaLine: String {
+        var parts: [String] = []
+        if let seq = match.matchSeq {
+            parts.append("Match \(seq)")
+        }
+        parts.append("\(shortLeagueName(match.league)) \(match.year)")
+        return parts.joined(separator: ", ")
+    }
+
+    private func displayTeamName(_ name: String, code: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed.uppercased()
+        }
+        return code.uppercased()
+    }
+
+    private func stackedTeamNames(vsColor: Color) -> some View {
+        VStack(spacing: 0) {
+            Text(displayTeamName(match.home, code: match.homeCode))
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.65)
+                .frame(maxWidth: .infinity)
+
+            Text("vs")
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(vsColor)
+                .padding(.vertical, 1)
+
+            Text(displayTeamName(match.away, code: match.awayCode))
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.65)
+                .frame(maxWidth: .infinity)
+        }
     }
 
     private var highlightResultLabel: String {
@@ -526,41 +602,8 @@ struct FigmaHeroCard: View {
     }
 
     private var standardTextBlock: some View {
-        heroTextBlock(resultText: heroDetailLabel)
-    }
-
-    private func heroTextBlock(resultText: String) -> some View {
-        VStack(spacing: 4) {
-            GeometryReader { geo in
-                let vsWidth: CGFloat = 26
-                let gap: CGFloat = 8
-                let side = max((geo.size.width - vsWidth - gap * 2) / 2, 0)
-
-                HStack(alignment: .center, spacing: gap) {
-                    Text(teamLabel(match.home, code: match.homeCode))
-                        .font(.system(size: Typography.teamSize, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.55)
-                        .frame(width: side, alignment: .trailing)
-
-                    Text("VS")
-                        .font(.system(size: Typography.vsSize, weight: .black))
-                        .foregroundStyle(Theme.accent)
-                        .frame(width: vsWidth)
-
-                    Text(teamLabel(match.away, code: match.awayCode))
-                        .font(.system(size: Typography.teamSize, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.55)
-                        .frame(width: side, alignment: .leading)
-                }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
-            }
-            .frame(height: Typography.teamRowHeight)
+        VStack(spacing: 0) {
+            stackedTeamNames(vsColor: Theme.accent)
 
             Text(heroLeagueLabel)
                 .font(.system(size: Typography.leagueSize, weight: .semibold))
@@ -568,43 +611,25 @@ struct FigmaHeroCard: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .frame(maxWidth: .infinity)
+                .padding(.top, 8)
 
-            if !resultText.isEmpty {
-                Text(resultText)
+            if !heroDetailLabel.isEmpty {
+                Text(heroDetailLabel)
                     .font(.system(size: Typography.detailSize, weight: .bold))
                     .foregroundStyle(Theme.accent)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity)
         .frame(height: textHeight, alignment: .top)
         .padding(.horizontal, 14)
-        .padding(.top, 6)
+        .padding(.top, 8)
         .padding(.bottom, 4)
         .clipped()
-    }
-
-    private func teamLabel(_ name: String, code: String) -> String {
-        let raw = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        let source = raw.isEmpty ? name : raw
-        let upper = source
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .uppercased()
-
-        if upper.count <= 12 { return upper }
-
-        let words = upper.split(separator: " ").map(String.init)
-        if words.count >= 3 {
-            return "\(words[0]) \(words[1])"
-        }
-        if words.count == 2, words[1].count > 6 {
-            return "\(words[0]) \(String(words[1].prefix(5)))"
-        }
-        return String(upper.prefix(12))
     }
 
     private var heroLeagueLabel: String {
@@ -637,6 +662,46 @@ struct FigmaHeroCard: View {
         let words = name.split(separator: " ")
         if words.count <= 3 { return name }
         return words.prefix(3).joined(separator: " ")
+    }
+}
+
+private enum HeroHighlightStyle {
+    static let accent = Color(red: 0.96, green: 0.58, blue: 0.08)
+    static let barFill = Color(red: 10 / 255, green: 18 / 255, blue: 42 / 255)
+}
+
+private struct HeroHighlightMetaBar: View {
+    let meta: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("HIGHLIGHTS")
+                .font(.system(size: 11, weight: .bold))
+                .tracking(0.4)
+                .foregroundStyle(.white)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.35))
+                .frame(width: 1, height: 14)
+
+            Text(meta.uppercased())
+                .font(.system(size: 11, weight: .bold))
+                .tracking(0.3)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(HeroHighlightStyle.barFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(HeroHighlightStyle.accent, lineWidth: 1.5)
+        )
     }
 }
 
@@ -786,25 +851,6 @@ private struct HeroSlideLinearAura: View {
     }
 }
 
-private struct HeroSlideColorLine: View {
-    let match: FeaturedMatch
-
-    private var homeColor: Color { HeroMatchPalette.home(for: match) }
-    private var awayColor: Color { HeroMatchPalette.away(for: match) }
-
-    var body: some View {
-        LinearGradient(
-            colors: [homeColor, awayColor],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-        .frame(height: 2)
-        .opacity(0.55)
-        .padding(.horizontal, 28)
-        .allowsHitTesting(false)
-    }
-}
-
 // MARK: - Hero thumbnail (team gradient + logos + validated poster)
 
 private enum HeroText {
@@ -862,16 +908,22 @@ private struct FigmaHeroThumbnail: View {
 
 private struct FigmaHeroHighlightThumbnail: View {
     let match: FeaturedMatch
+    let isActive: Bool
 
     private var homeColor: Color { HeroMatchPalette.home(for: match) }
     private var awayColor: Color { HeroMatchPalette.away(for: match) }
 
     var body: some View {
         ZStack {
-            HeroVideoFrameBackground(url: match.videoURL) {
-                LinearGradient(colors: [homeColor, awayColor], startPoint: .leading, endPoint: .trailing)
+            if match.videoURL != nil {
+                HeroHighlightPreviewVideo(url: match.videoURL, isActive: isActive) {
+                    LinearGradient(colors: [homeColor, awayColor], startPoint: .leading, endPoint: .trailing)
+                }
+            } else {
+                HeroVideoFrameBackground(url: match.videoURL) {
+                    LinearGradient(colors: [homeColor, awayColor], startPoint: .leading, endPoint: .trailing)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             LinearGradient(
                 colors: [
@@ -885,6 +937,51 @@ private struct FigmaHeroHighlightThumbnail: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+    }
+}
+
+private struct HeroHighlightPreviewVideo<Fallback: View>: View {
+    let url: URL?
+    let isActive: Bool
+    @ViewBuilder var fallback: () -> Fallback
+    @StateObject private var playback: StreamPlayback
+
+    init(url: URL?, isActive: Bool, @ViewBuilder fallback: @escaping () -> Fallback) {
+        self.url = url
+        self.isActive = isActive
+        self.fallback = fallback
+        _playback = StateObject(
+            wrappedValue: StreamPlayback(url: url, autoplay: false, looping: true, muted: true)
+        )
+    }
+
+    var body: some View {
+        ZStack {
+            if playback.hasMedia, playback.isReady || playback.isPlaying {
+                StreamVideoLayer(player: playback.player, videoGravity: .resizeAspectFill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                fallback()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .clipped()
+        .onAppear { syncPlayback() }
+        .onChange(of: isActive) { _, _ in syncPlayback() }
+        .onChange(of: url) { _, _ in
+            playback.replace(url: url, autoplay: isActive)
+        }
+        .onDisappear { playback.pause() }
+    }
+
+    private func syncPlayback() {
+        guard playback.hasMedia else { return }
+        if isActive {
+            playback.play()
+        } else {
+            playback.pause()
+            playback.seek(fraction: 0)
+        }
     }
 }
 

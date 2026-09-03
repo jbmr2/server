@@ -2,10 +2,12 @@ import SwiftUI
 
 @main
 struct JBMRSportsApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var cricketStore = CricketStore.shared
     @StateObject private var reelStore = ReelStudioStore.shared
     @StateObject private var downloadLibrary = DownloadLibraryStore.shared
-    @AppStorage("hasSignedIn") private var hasSignedIn = false
+    @StateObject private var authStore = AuthStore.shared
+    @StateObject private var userLibrary = UserLibraryStore.shared
     @State private var showSplash = true
 
     init() {
@@ -21,23 +23,27 @@ struct JBMRSportsApp: App {
                             showSplash = false
                         }
                     }
-                } else if hasSignedIn {
+                } else if authStore.signedIn {
                     RootTabView()
                         .environmentObject(cricketStore)
                         .environmentObject(reelStore)
                         .environmentObject(downloadLibrary)
-                        .task {
-                            await cricketStore.refresh()
-                        }
+                        .environmentObject(authStore)
+                        .environmentObject(userLibrary)
+                        .environmentObject(DeepLinkRouter.shared)
                 } else {
-                    LoginView {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            hasSignedIn = true
-                        }
+                    LoginView { phone in
+                        authStore.signIn(phone: phone)
                     }
                 }
             }
             .preferredColorScheme(.dark)
+            .task {
+                await cricketStore.refresh()
+            }
+            .onOpenURL { url in
+                DeepLinkRouter.shared.handle(url: url)
+            }
         }
     }
 }

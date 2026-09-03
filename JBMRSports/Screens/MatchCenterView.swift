@@ -7,8 +7,10 @@ struct MatchCenterView: View {
     var embedsInTab: Bool = false
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: CricketStore
     @EnvironmentObject private var reelStore: ReelStudioStore
     @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
+    @EnvironmentObject private var userLibrary: UserLibraryStore
     @State private var section: CenterSection = .scorecard
     @StateObject private var playback: StreamPlayback
     @StateObject private var detailStore = MatchDetailStore()
@@ -81,7 +83,7 @@ struct MatchCenterView: View {
             }
         }
         .refreshable {
-            await detailStore.load(matchId: match.id, matchSeq: match.matchSeq)
+            await detailStore.load(matchId: match.id, matchSeq: match.matchSeq, feed: store.cachedFeed)
         }
         .background(Theme.background.ignoresSafeArea())
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -91,13 +93,19 @@ struct MatchCenterView: View {
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(!embedsInTab)
         .task(id: match.id) {
-            await detailStore.load(matchId: match.id, matchSeq: match.matchSeq)
+            userLibrary.recordWatch(matchId: match.id, title: match.vsLabel)
+            await detailStore.load(matchId: match.id, matchSeq: match.matchSeq, feed: store.cachedFeed)
             if let last = detailStore.detail?.innings.last?.number {
                 selectedInning = last
             }
             if let lastOver = detailStore.detail?.overs.last?.number {
                 selectedOver = lastOver
             }
+            let live = match.isLive || MatchDetailStore.isLiveMatchStatus(detailStore.detail?.status ?? "")
+            detailStore.startLivePolling(matchId: match.id, isLive: live) { store.cachedFeed }
+        }
+        .onDisappear {
+            detailStore.stopLivePolling()
         }
         .sheet(isPresented: $showShare) {
             ShareSheet(items: shareItems)
@@ -120,16 +128,21 @@ struct MatchCenterView: View {
             } else if let toast = reelStore.toastMessage {
                 toastBanner(toast) { reelStore.clearToast() }
                     .padding(.top, 56)
+            } else if let toast = userLibrary.toastMessage {
+                toastBanner(toast) { userLibrary.clearToast() }
+                    .padding(.top, 56)
             }
         }
     }
 
     private var shareItems: [Any] {
-        var items: [Any] = ["Watch \(match.vsLabel) on JBMR Sports"]
-        if let url = currentPlayURL ?? match.videoURL {
-            items.append(url)
-        }
-        return items
+        let webURL = MatchDeepLink.matchURL(matchId: match.id)
+        let appURL = MatchDeepLink.appOpenURL(matchId: match.id)
+        let message = MatchDeepLink.shareMessage(
+            title: "Watch \(match.vsLabel) on JBMR Sports",
+            url: webURL
+        )
+        return [message, appURL]
     }
 
     private func toastBanner(_ text: String, onClear: @escaping () -> Void) -> some View {
@@ -149,86 +162,134 @@ struct MatchCenterView: View {
     // MARK: - Header
 
     private var matchHeader: some View {
-        AppHeader(
-            onLogo: {
+        HStack(spacing: 8) {
+            Button {
                 if embedsInTab {
                     tab = .home
                 } else {
                     dismiss()
                 }
-            },
-            onAvatar: { tab = .profile }
-        )
+            } label: {
+                BrandLogo(size: 18)
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            Button {
+                showShare = true
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Color.white.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Share match")
+
+            UserAvatarButton { tab = .profile }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 44)
         .background(Theme.background)
     }
 
     // MARK: - Player
+
+    private var isCurrentlyLive: Bool {
+        if match.isLive { return true }
+        return (detail?.status ?? "").lowercased() == "live"
+    }
+
+    private var playerScoreLabel: String {
+        if let score = detail?.scoreLabel, !score.isEmpty { return score }
+        if !match.scoreLabel.isEmpty { return match.scoreLabel }
+        return match.vsLabel
+    }
+
+    private var playerStatusLabel: String {
+        if isCurrentlyLive {
+            if let rr = detail?.runRate, !rr.isEmpty, rr != "—" {
+                return "RR \(rr)"
+            }
+            return "LIVE"
+        }
+        if isMatchCompleted {
+            let result = detail?.innings.last?.total ?? match.statusLine
+            return result.isEmpty ? "Completed" : result
+        }
+        return match.timeLabel
+    }
 
     private var playerHeight: CGFloat {
         max(UIScreen.main.bounds.width * 9 / 16, 252)
     }
 
     private var player: some View {
-        ZStack {
-            StreamVideoLayer(player: playback.player, videoGravity: .resizeAspectFill)
-                .frame(height: playerHeight)
-                .frame(maxWidth: .infinity)
-                .clipped()
-
-            if !playback.isPlaying && playback.progress < 0.02 {
-                MatchArtwork(match: match)
+        VStack(spacing: 0) {
+            ZStack {
+                StreamVideoLayer(player: playback.player, videoGravity: .resizeAspectFill)
                     .frame(height: playerHeight)
                     .frame(maxWidth: .infinity)
                     .clipped()
                     .allowsHitTesting(false)
-            }
 
-            LinearGradient(
-                colors: [.black.opacity(0.35), .clear, .black.opacity(0.75)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .allowsHitTesting(false)
-
-            VStack(spacing: 0) {
-                HStack {
-                    if match.isLive {
-                        HStack(spacing: 5) {
-                            Circle().fill(.white).frame(width: 6, height: 6)
-                            Text("LIVE")
-                                .font(.system(size: 11, weight: .heavy))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(Theme.liveRed))
-                    }
-                    Spacer()
-                    HStack(spacing: 8) {
-                        Text("\(playback.currentLabel) / \(playback.durationLabel)")
-                            .font(.system(size: 10, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(.black.opacity(0.5)))
-                        Image(systemName: "eye.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(.black.opacity(0.45)))
-                    }
+                if !playback.isPlaying && playback.progress < 0.02 {
+                    MatchArtwork(match: match)
+                        .frame(height: playerHeight)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                        .allowsHitTesting(false)
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
 
-                Spacer(minLength: 0)
+                LinearGradient(
+                    colors: [.black.opacity(0.35), .clear, .black.opacity(0.75)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .allowsHitTesting(false)
 
                 VStack(spacing: 0) {
+                    HStack {
+                        if isCurrentlyLive {
+                            HStack(spacing: 5) {
+                                Circle().fill(.white).frame(width: 6, height: 6)
+                                Text("LIVE")
+                                    .font(.system(size: 11, weight: .heavy))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Theme.liveRed))
+                        }
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Text("\(playback.currentLabel) / \(playback.durationLabel)")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(.black.opacity(0.5)))
+                            Image(systemName: "eye.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(.black.opacity(0.45)))
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+
+                    Spacer(minLength: 0)
+
                     HStack(spacing: 10) {
                         Button { playback.toggle() } label: {
                             Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         }
+                        .buttonStyle(.plain)
+
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
                                 Capsule().fill(Color.white.opacity(0.25)).frame(height: 3)
@@ -238,7 +299,7 @@ struct MatchCenterView: View {
                             }
                             .frame(maxHeight: .infinity, alignment: .center)
                             .contentShape(Rectangle())
-                            .gesture(
+                            .highPriorityGesture(
                                 DragGesture(minimumDistance: 0).onChanged { value in
                                     let f = min(max(value.location.x / max(geo.size.width, 1), 0), 1)
                                     playback.seek(fraction: f)
@@ -263,37 +324,59 @@ struct MatchCenterView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-
-                    HStack {
-                        Text(detail?.scoreLabel ?? (match.scoreLabel.isEmpty ? match.vsLabel : match.scoreLabel))
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                        Spacer()
-                        if match.isLive {
-                            Text("LIVE")
-                                .font(.system(size: 12, weight: .heavy))
-                                .foregroundStyle(Theme.liveRed)
-                        } else if let venue = detail?.venue, !venue.isEmpty {
-                            Text(venue)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.9))
-                                .lineLimit(1)
-                        } else if !match.statusLine.isEmpty {
-                            Text(match.statusLine)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.9))
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.black.opacity(0.72))
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.001))
                 }
             }
+            .frame(height: playerHeight)
+
+            matchInfoBar
         }
-        .frame(height: playerHeight)
         .onDisappear { playback.pause() }
+    }
+
+    private var matchInfoBar: some View {
+        HStack(spacing: 10) {
+            Text(playerScoreLabel)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer(minLength: 8)
+
+            Button {
+                _ = userLibrary.toggleWatchlist(matchId: match.id, title: match.vsLabel)
+            } label: {
+                Image(systemName: userLibrary.isWatchlisted(matchId: match.id) ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(userLibrary.isWatchlisted(matchId: match.id) ? Theme.accent : Theme.muted)
+            }
+            .buttonStyle(.plain)
+
+            if isCurrentlyLive {
+                HStack(spacing: 5) {
+                    Circle().fill(Theme.liveRed).frame(width: 6, height: 6)
+                    Text(playerStatusLabel)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(Theme.liveRed)
+                }
+            } else {
+                Text(playerStatusLabel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Theme.card)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Theme.border)
+                .frame(height: 1)
+        }
     }
 
     // MARK: - Tabs

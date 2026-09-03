@@ -7,8 +7,11 @@ struct RootTabView: View {
     @State private var showSearch = false
     @State private var showShorts = false
     @State private var showCreate = false
+    @EnvironmentObject private var store: CricketStore
     @EnvironmentObject private var reelStore: ReelStudioStore
     @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
+    @EnvironmentObject private var deepLinkRouter: DeepLinkRouter
+    @EnvironmentObject private var userLibrary: UserLibraryStore
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -48,6 +51,7 @@ struct RootTabView: View {
         .background(Theme.background.ignoresSafeArea())
         .sheet(isPresented: $showSearch) {
             SearchSheet(tab: $tab, showSearch: $showSearch)
+                .environmentObject(userLibrary)
         }
         .sheet(isPresented: $showCreate) {
             NavigationStack {
@@ -68,6 +72,43 @@ struct RootTabView: View {
                 tab = .home
             }
         }
+        .onChange(of: deepLinkRouter.pendingRoute) { _, route in
+            guard let route else { return }
+            Task { await openDeepLink(route) }
+        }
+        .task {
+            if let route = deepLinkRouter.pendingRoute {
+                await openDeepLink(route)
+            }
+        }
+    }
+
+    @MainActor
+    private func openDeepLink(_ route: MatchDeepLink.Route) async {
+        if store.featuredMatches.isEmpty && store.scheduleMatches.isEmpty {
+            await store.refresh()
+        }
+
+        switch route {
+        case .match(let id):
+            guard store.featuredMatch(id: id) != nil else {
+                deepLinkRouter.clear()
+                return
+            }
+            tab = .home
+            homePath = NavigationPath()
+            homePath.append(AppNavigationRoute.match(id))
+        case .tournament(let id):
+            guard store.tournaments.contains(where: { $0.tournamentId == id }) else {
+                deepLinkRouter.clear()
+                return
+            }
+            tab = .home
+            homePath = NavigationPath()
+            homePath.append(AppNavigationRoute.tournament(id))
+        }
+
+        deepLinkRouter.clear()
     }
 
     private func popToRoot(for tab: AppTab) {
@@ -168,6 +209,7 @@ struct SearchSheet: View {
     @Binding var showSearch: Bool
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: CricketStore
+    @EnvironmentObject private var userLibrary: UserLibraryStore
     @State private var query = ""
 
     private var results: [FeaturedMatch] {
@@ -190,17 +232,26 @@ struct SearchSheet: View {
                         .listRowBackground(Theme.card)
                 } else {
                     ForEach(results) { match in
-                        NavigationLink {
-                            MatchCenterView(match: match, tab: $tab, showSearch: $showSearch)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(match.vsLabel)
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                Text(match.seriesLabel)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Theme.muted)
+                        HStack(spacing: 8) {
+                            NavigationLink {
+                                MatchCenterView(match: match, tab: $tab, showSearch: $showSearch)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(match.vsLabel)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                    Text(match.seriesLabel)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Theme.muted)
+                                }
                             }
+                            Button {
+                                _ = userLibrary.toggleWatchlist(matchId: match.id, title: match.vsLabel)
+                            } label: {
+                                Image(systemName: userLibrary.isWatchlisted(matchId: match.id) ? "bookmark.fill" : "bookmark")
+                                    .foregroundStyle(userLibrary.isWatchlisted(matchId: match.id) ? Theme.accent : Theme.muted)
+                            }
+                            .buttonStyle(.plain)
                         }
                         .listRowBackground(Theme.card)
                     }
@@ -223,4 +274,10 @@ struct SearchSheet: View {
 
 #Preview {
     RootTabView()
+        .environmentObject(CricketStore.shared)
+        .environmentObject(ReelStudioStore.shared)
+        .environmentObject(DownloadLibraryStore.shared)
+        .environmentObject(DeepLinkRouter.shared)
+        .environmentObject(AuthStore.shared)
+        .environmentObject(UserLibraryStore.shared)
 }

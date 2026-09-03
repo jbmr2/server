@@ -94,17 +94,22 @@ struct FirebaseHighlight: Decodable {
 
 enum FirebaseOTTClient {
     static func fetchFeed() async throws -> FirebaseOTTFeed {
+        try await fetchFeedWithData().0
+    }
+
+    static func fetchFeedWithData() async throws -> (FirebaseOTTFeed, Data) {
         var req = URLRequest(url: FirebaseOTT.feedURL)
         req.timeoutInterval = 25
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        let (data, response) = try await URLSession.shared.data(for: req)
+        req.cachePolicy = .reloadRevalidatingCacheData
+        let (data, response) = try await NetworkSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
         guard !data.isEmpty, data != Data("null".utf8) else {
             throw URLError(.cannotDecodeContentData)
         }
-        return try JSONDecoder().decode(FirebaseOTTFeed.self, from: data)
+        let feed = try JSONDecoder().decode(FirebaseOTTFeed.self, from: data)
+        return (feed, data)
     }
 
     static func fetchCompleteMatch(matchId: String) async throws -> APICompleteMatch? {
@@ -113,8 +118,8 @@ enum FirebaseOTTClient {
         else { return nil }
         var req = URLRequest(url: url)
         req.timeoutInterval = 25
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        let (data, response) = try await URLSession.shared.data(for: req)
+        req.cachePolicy = .reloadRevalidatingCacheData
+        let (data, response) = try await NetworkSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }

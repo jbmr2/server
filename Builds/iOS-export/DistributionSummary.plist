@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>JBMRSports.ipa</key>
+	<array>
+		<dict>
+			<key>architectures</key>
+			<array>
+				<string>arm64</string>
+			</array>
+			<key>buildNumber</key>
+			<string>9</string>
+			<key>certificate</key>
+			<dict>
+				<key>SHA1</key>
+				<string>BD221EA276E5838D049B060849B8259B42CA9D82</string>
+				<key>dateExpires</key>
+				<string>30/08/27</string>
+				<key>type</key>
+				<string>Apple Development</string>
+			</dict>
+			<key>entitlements</key>
+			<dict>
+				<key>application-identifier</key>
+				<string>9Z6NFGSD29.com.jbmrsports.ott</string>
+				<key>com.apple.developer.team-identifier</key>
+				<string>9Z6NFGSD29</string>
+				<key>get-task-allow</key>
+				<true/>
+			</dict>
+			<key>name</key>
+			<string>JBMRSports.app</string>
+			<key>profile</key>
+			<dict>
+				<key>UUID</key>
+				<string>f730e4a0-2c5e-4423-a18a-be319a2db724</string>
+				<key>dateExpires</key>
+				<string>06/09/26</string>
+				<key>name</key>
+				<string>iOS Team Provisioning Profile: com.jbmrsports.ott</string>
+			</dict>
+			<key>team</key>
+			<dict>
+				<key>id</key>
+				<string>9Z6NFGSD29</string>
+				<key>name</key>
+				<string></string>
+			</dict>
+			<key>versionNumber</key>
+			<string>1.1</string>
+		</dict>
+	</array>
+</dict>
+</plist>

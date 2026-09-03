@@ -1,0 +1,131 @@
+2026-09-01 17:46:54 +0000 [MT] Initial pipeline context: <IDEDistributionProcessingPipelineContext: 0xbebc4c300; archive(resolved)="<IDEArchive: 0xbec2b7800>", distributionTask(resolved)="2", distributionDestination(resolved)="1", distributionMethod(resolved)="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team(resolved)="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	Chain (14, self inclusive):
+	<IDEDistributionProcessingPipelineContext: 0xbebc4c300; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionProcessingPipelineContext: 0xbebc4cc00; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d9900; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d9680; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d9400; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d9180; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d8f00; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d8c80; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d8a00; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="<IDEProvisioningBasicTeam: 0xbebc04580; teamID='9Z6NFGSD29', teamName='(null)'>">
+	<IDEDistributionContext: 0xbec3d8780; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="(null)">
+	<IDEDistributionContext: 0xbec3d8500; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="(null)">
+	<IDEDistributionContext: 0xbec3d8280; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="(null)">
+	<IDEDistributionContext: 0xbec3d8000; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="<IDEDistributionMethodDevelopmentSigned: 0xbec743c40>", team="(null)">
+	<IDEDistributionContext: 0x105302890; archive = "<IDEArchive: 0xbec2b7800>", distributionMethod="(null)", team="(null)">
+</IDEDistributionProcessingPipelineContext: 0xbebc4c300>
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionCreateDestRootStep
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionCopyItemStep
+2026-09-01 17:46:54 +0000 [MT] Running /usr/bin/ditto '-V' '/Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app' '/var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Root/Payload/JBMRSports.app'
+2026-09-01 17:46:54 +0000  >>> Copying /Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app 
+2026-09-01 17:46:54 +0000  copying file ./_CodeSignature/CodeResources ... 
+2026-09-01 17:46:54 +0000  3009 bytes for ./_CodeSignature/CodeResources
+2026-09-01 17:46:54 +0000  copying file ./AppIcon60x60@2x.png ... 
+2026-09-01 17:46:54 +0000  12139 bytes for ./AppIcon60x60@2x.png
+2026-09-01 17:46:54 +0000  copying file ./GoogleService-Info.plist ... 
+2026-09-01 17:46:54 +0000  758 bytes for ./GoogleService-Info.plist
+2026-09-01 17:46:54 +0000  copying file ./Assets.car ... 
+2026-09-01 17:46:54 +0000  28138616 bytes for ./Assets.car
+2026-09-01 17:46:54 +0000  copying file ./AppIcon76x76@2x~ipad.png ... 
+2026-09-01 17:46:54 +0000  18759 bytes for ./AppIcon76x76@2x~ipad.png
+2026-09-01 17:46:54 +0000  copying file ./embedded.mobileprovision ... 
+2026-09-01 17:46:54 +0000  12237 bytes for ./embedded.mobileprovision
+2026-09-01 17:46:54 +0000  copying file ./JBMRSports ... 
+2026-09-01 17:46:54 +0000  2357088 bytes for ./JBMRSports
+2026-09-01 17:46:54 +0000  copying file ./Info.plist ... 
+2026-09-01 17:46:54 +0000  1669 bytes for ./Info.plist
+2026-09-01 17:46:54 +0000  copying file ./PkgInfo ... 
+2026-09-01 17:46:54 +0000  8 bytes for ./PkgInfo
+2026-09-01 17:46:54 +0000 [MT] /usr/bin/ditto exited with 0
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionEmbedProfileStep
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionInfoPlistStep
+2026-09-01 17:46:54 +0000 [MT] Skipping step: IDEDistributionInfoPlistStep because it said so
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionAppThinningPlistStep
+2026-09-01 17:46:54 +0000 [MT] Skipping step: IDEDistributionAppThinningPlistStep because it said so
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionSymbolsStep
+2026-09-01 17:46:54 +0000 [MT] Skipping step: IDEDistributionSymbolsStep because it said so
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionAppThinningStep
+2026-09-01 17:46:54 +0000 [MT] Skipping step: IDEDistributionAppThinningStep because it said so
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionArchThinningStep
+2026-09-01 17:46:54 +0000 [MT] Archs to thin for item /Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app are []
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionODRStep
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionStripXattrsStep
+2026-09-01 17:46:54 +0000 [MT] Skipping stripping extended attributes because the codesign step will strip them.
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionCodesignStep
+2026-09-01 17:46:54 +0000 [MT] Entitlements for <IDEDistributionItem: 0xbede517a0; bundleID='com.jbmrsports.ott', path='<DVTFilePath:0xbede1bc00:'/Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0xbede51740; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0xbedef8fc0; name='Apple Development: 917988879238 (Y692WQX5DR)', hash='BD221EA276E5838D049B060849B8259B42CA9D82', serialNumber='6C51B6DACFF8313284E486C37203446B', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2026-08-30 15:24:45 +0000''>', entitlements='{
+    "application-identifier" = "9Z6NFGSD29.com.jbmrsports.ott";
+    "com.apple.developer.team-identifier" = 9Z6NFGSD29;
+    "get-task-allow" = 1;
+}', teamID='9Z6NFGSD29', identifier='com.jbmrsports.ott', executablePath='<DVTFilePath:0xbede51260:'/Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app/JBMRSports'>', hardenedRuntime='0'>'>: {
+    "application-identifier" = "9Z6NFGSD29.com.jbmrsports.ott";
+    "com.apple.developer.team-identifier" = 9Z6NFGSD29;
+    "get-task-allow" = 1;
+}
+2026-09-01 17:46:54 +0000 [MT] Associated App Clip Identifiers Filter: Skipping because "com.apple.developer.associated-appclip-app-identifiers" is not present
+2026-09-01 17:46:54 +0000 [MT] Entitlements for <IDEDistributionItem: 0xbede517a0; bundleID='com.jbmrsports.ott', path='<DVTFilePath:0xbede1bc00:'/Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0xbede51740; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0xbedef8d80; name='Apple Development: 917988879238 (Y692WQX5DR)', hash='BD221EA276E5838D049B060849B8259B42CA9D82', serialNumber='6C51B6DACFF8313284E486C37203446B', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2026-08-30 15:24:45 +0000''>', entitlements='{
+    "application-identifier" = "9Z6NFGSD29.com.jbmrsports.ott";
+    "com.apple.developer.team-identifier" = 9Z6NFGSD29;
+    "get-task-allow" = 1;
+}', teamID='9Z6NFGSD29', identifier='com.jbmrsports.ott', executablePath='<DVTFilePath:0xbede51260:'/Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app/JBMRSports'>', hardenedRuntime='0'>'> are: {
+    "application-identifier" = "9Z6NFGSD29.com.jbmrsports.ott";
+    "com.apple.developer.team-identifier" = 9Z6NFGSD29;
+    "get-task-allow" = 1;
+}
+2026-09-01 17:46:54 +0000 [MT] Writing entitlements for <IDEDistributionItem: 0xbede517a0; bundleID='com.jbmrsports.ott', path='<DVTFilePath:0xbede1bc00:'/Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0xbede51740; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0xbedef8d80; name='Apple Development: 917988879238 (Y692WQX5DR)', hash='BD221EA276E5838D049B060849B8259B42CA9D82', serialNumber='6C51B6DACFF8313284E486C37203446B', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2026-08-30 15:24:45 +0000''>', entitlements='{
+    "application-identifier" = "9Z6NFGSD29.com.jbmrsports.ott";
+    "com.apple.developer.team-identifier" = 9Z6NFGSD29;
+    "get-task-allow" = 1;
+}', teamID='9Z6NFGSD29', identifier='com.jbmrsports.ott', executablePath='<DVTFilePath:0xbede51260:'/Users/jbmrsports/jbmr ott app final/Builds/JBMRSports.xcarchive/Products/Applications/JBMRSports.app/JBMRSports'>', hardenedRuntime='0'>'> to: /var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/entitlements~~~hbEEFe
+2026-09-01 17:46:54 +0000 [MT] invoking codesign: <NSConcreteTask: 0xbebc8ad50; launchPath='/usr/bin/codesign', arguments='(
+    "-f",
+    "-s",
+    BD221EA276E5838D049B060849B8259B42CA9D82,
+    "--entitlements",
+    "/var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/entitlements~~~hbEEFe",
+    "--preserve-metadata=identifier,flags,runtime,launch-constraints,library-constraints",
+    "--generate-entitlement-der",
+    "--strip-disallowed-xattrs",
+    "-vvv",
+    "/var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Root/Payload/JBMRSports.app"
+)'>
+2026-09-01 17:46:54 +0000 [MT] codesign output: /var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Root/Payload/JBMRSports.app: replacing existing signature
+/var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Root/Payload/JBMRSports.app: signed app bundle with Mach-O thin (arm64) [com.jbmrsports.ott]
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionZipODRItemStep
+2026-09-01 17:46:54 +0000 [MT] Skipping step: IDEDistributionZipODRItemStep because it said so
+2026-09-01 17:46:54 +0000 [MT] Processing step: IDEDistributionCreateIPAStep
+2026-09-01 17:46:54 +0000 [MT] Running /usr/bin/ditto '-V' '-c' '-k' '--norsrc' '/var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Root' '/var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Packages/JBMRSports.ipa'
+2026-09-01 17:46:54 +0000  >>> Copying /var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Root 
+2026-09-01 17:46:54 +0000  copying file ./Payload/JBMRSports.app/_CodeSignature/CodeResources ... 
+2026-09-01 17:46:54 +0000  3009 bytes for ./Payload/JBMRSports.app/_CodeSignature/CodeResources
+2026-09-01 17:46:54 +0000  copying file ./Payload/JBMRSports.app/AppIcon60x60@2x.png ... 
+2026-09-01 17:46:54 +0000  12139 bytes for ./Payload/JBMRSports.app/AppIcon60x60@2x.png
+2026-09-01 17:46:54 +0000  copying file ./Payload/JBMRSports.app/GoogleService-Info.plist ... 
+2026-09-01 17:46:54 +0000  758 bytes for ./Payload/JBMRSports.app/GoogleService-Info.plist
+2026-09-01 17:46:54 +0000  copying file ./Payload/JBMRSports.app/Assets.car ... 
+2026-09-01 17:46:55 +0000  28138616 bytes for ./Payload/JBMRSports.app/Assets.car
+2026-09-01 17:46:55 +0000  copying file ./Payload/JBMRSports.app/AppIcon76x76@2x~ipad.png ... 
+2026-09-01 17:46:55 +0000  18759 bytes for ./Payload/JBMRSports.app/AppIcon76x76@2x~ipad.png
+2026-09-01 17:46:55 +0000  copying file ./Payload/JBMRSports.app/embedded.mobileprovision ... 
+2026-09-01 17:46:55 +0000  12237 bytes for ./Payload/JBMRSports.app/embedded.mobileprovision
+2026-09-01 17:46:55 +0000  copying file ./Payload/JBMRSports.app/JBMRSports ... 
+2026-09-01 17:46:55 +0000  2357088 bytes for ./Payload/JBMRSports.app/JBMRSports
+2026-09-01 17:46:55 +0000  copying file ./Payload/JBMRSports.app/Info.plist ... 
+2026-09-01 17:46:55 +0000  1669 bytes for ./Payload/JBMRSports.app/Info.plist
+2026-09-01 17:46:55 +0000  copying file ./Payload/JBMRSports.app/PkgInfo ... 
+2026-09-01 17:46:55 +0000  8 bytes for ./Payload/JBMRSports.app/PkgInfo
+2026-09-01 17:46:55 +0000 [MT] /usr/bin/ditto exited with 0
+2026-09-01 17:46:55 +0000 [MT] Processing step: IDEDistributionAppStoreInformationStep
+2026-09-01 17:46:55 +0000 [MT] Skipping step: IDEDistributionAppStoreInformationStep because it said so
+2026-09-01 17:46:55 +0000 [MT] Processing step: IDEDistributionGenerateProcessedDistributionItems
+2026-09-01 17:46:55 +0000 [MT] IDEDistributionItem init <DVTFilePath:0xbede53ae0:'/var/folders/_1/pvww6y5n7y5czc5xd4h9l7dc0000gn/T/XcodeDistPipeline.~~~vAcP6Q/Root/Payload/JBMRSports.app'>
+2026-09-01 17:46:55 +0000 [MT] Processing step: IDEDistributionCreateManifestStep

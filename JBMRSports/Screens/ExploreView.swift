@@ -43,10 +43,20 @@ struct ExploreView: View {
         filteredMatches.contains { $0.status == .live }
     }
 
-    private var todayLabel: String {
-        let f = DateFormatter()
-        f.dateFormat = "d MMM"
-        return "Today \(f.string(from: Date()))"
+    private var liveCount: Int {
+        filteredMatches.filter { $0.status == .live }.count
+    }
+
+    private var todayDayName: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: Date())
+    }
+
+    private var todayDateLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM"
+        return formatter.string(from: Date())
     }
 
     var body: some View {
@@ -62,11 +72,7 @@ struct ExploreView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 40)
                         } else if tournamentGroups.isEmpty {
-                            Text("No matches scheduled")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Theme.muted)
-                                .padding(.horizontal, 16)
-                                .padding(.top, 24)
+                            scheduleEmptyState
                         } else {
                             ForEach(tournamentGroups, id: \.0) { tournament, matches in
                                 FigmaTournamentGroup(
@@ -81,11 +87,10 @@ struct ExploreView: View {
                                         path.append(AppNavigationRoute.match(match.id))
                                     }
                                 )
-                                Color.clear.frame(height: 16)
                             }
                         }
 
-                        Color.clear.frame(height: 80)
+                        Color.clear.frame(height: 96)
                     }
                 }
                 .onChange(of: scrollToToday) { _, go in
@@ -95,29 +100,13 @@ struct ExploreView: View {
                 }
             }
 
-            // Figma Today FAB: 12pt ExtraBold, px 20 / py 10, radius 20
-            Button {
-                scrollToToday = true
-            } label: {
-                Text("Today")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Theme.accent))
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 24)
-            .padding(.bottom, 16)
+            todayFAB
         }
-        .refreshable { await store.refresh() }
+        .refreshable { await store.refresh(force: true) }
         .background(Theme.background.ignoresSafeArea())
         .safeAreaInset(edge: .top, spacing: 0) {
             AppHeader(onAvatar: { tab = .profile })
                 .background(Theme.background)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(Theme.border).frame(height: 1)
-                }
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: AppNavigationRoute.self) { route in
@@ -152,32 +141,147 @@ struct ExploreView: View {
         }
     }
 
+    private var scheduleEmptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(Theme.muted.opacity(0.6))
+            Text("No matches scheduled")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+            Text("Check back soon for upcoming fixtures")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 48)
+        .padding(.horizontal, 24)
+    }
+
+    private var todayFAB: some View {
+        Button {
+            scrollToToday = true
+        } label: {
+            HStack(spacing: 6) {
+                Text("Today")
+                    .font(.system(size: 13, weight: .bold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(
+                Capsule()
+                    .fill(Color(red: 22 / 255, green: 24 / 255, blue: 30 / 255))
+                    .shadow(color: .black.opacity(0.45), radius: 12, y: 4)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(
+                        LinearGradient(
+                            colors: [Theme.accent.opacity(0.5), Color.white.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+
     private var dateHeader: some View {
-        HStack {
-            Text(todayLabel)
-                .font(.system(size: 16, weight: .heavy))
-                .foregroundStyle(.white)
-            Spacer()
-            if hasLive {
-                HStack(spacing: 6) {
-                    Circle().fill(Theme.accent).frame(width: 6, height: 6)
-                    Text("Live Now")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.accent)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(todayDayName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+
+                    Text(todayDateLabel)
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    if hasLive {
+                        liveNowPill
+                    }
+                    calendarPill
                 }
             }
-            Button { showDatePicker = true } label: {
-                Image(systemName: "calendar")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
-                    .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.card))
+
+            if !filteredMatches.isEmpty {
+                HStack(spacing: 6) {
+                    Text("\(filteredMatches.count) matches")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+
+                    if liveCount > 0 {
+                        Text("•")
+                            .foregroundStyle(Theme.muted.opacity(0.5))
+                        Text("\(liveCount) live")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Theme.liveRed)
+                    }
+                }
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Theme.card)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+    }
+
+    private var liveNowPill: some View {
+        Button {
+            scrollToToday = true
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Theme.liveRed)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: Theme.liveRed.opacity(0.8), radius: 4)
+
+                Text("Live Now")
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(Theme.liveRed.opacity(0.14))
+                    .overlay(Capsule().stroke(Theme.liveRed.opacity(0.35), lineWidth: 1))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var calendarPill: some View {
+        Button { showDatePicker = true } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Calendar")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(.white.opacity(0.9))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func resolveMatch(id: String) -> FeaturedMatch? {
@@ -211,7 +315,7 @@ struct ExploreView: View {
     }
 }
 
-// MARK: - Tournament group (Figma vertical list)
+// MARK: - Tournament group
 
 struct FigmaTournamentGroup: View {
     let tournament: String
@@ -219,191 +323,272 @@ struct FigmaTournamentGroup: View {
     var onHeader: (() -> Void)? = nil
     var onSelect: (ScheduleMatch) -> Void
 
+    private var tournamentLogo: URL? {
+        matches.first?.tournamentLogoURL
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             Button {
                 onHeader?()
             } label: {
-                HStack(spacing: 4) {
-                    Text(tournament.uppercased())
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Text(">")
-                        .font(.system(size: 12, weight: .bold))
+                HStack(spacing: 10) {
+                    tournamentLogoView
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tournament)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+
+                        Text("\(matches.count) \(matches.count == 1 ? "match" : "matches")")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.muted)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Theme.mutedSoft)
-                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
             }
             .buttonStyle(.plain)
 
-            ForEach(matches) { match in
-                Button {
-                    onSelect(match)
-                } label: {
-                    FigmaScheduleMatchRow(match: match)
+            Rectangle()
+                .fill(Theme.border)
+                .frame(height: 1)
+                .padding(.horizontal, 14)
+
+            VStack(spacing: 0) {
+                ForEach(Array(matches.enumerated()), id: \.element.id) { index, match in
+                    Button {
+                        onSelect(match)
+                    } label: {
+                        FigmaScheduleMatchRow(match: match)
+                    }
+                    .buttonStyle(.plain)
+
+                    if index < matches.count - 1 {
+                        Rectangle()
+                            .fill(Theme.border.opacity(0.7))
+                            .frame(height: 1)
+                            .padding(.leading, 14)
+                    }
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
             }
         }
-        .padding(.top, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Theme.card)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Theme.border, lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+
+    private var tournamentLogoView: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+            if let tournamentLogo {
+                AsyncImage(url: tournamentLogo) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.accent.opacity(0.7))
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accent.opacity(0.7))
+            }
+        }
+        .frame(width: 36, height: 36)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
     }
 }
+
+// MARK: - Match row
 
 struct FigmaScheduleMatchRow: View {
     let match: ScheduleMatch
 
-    private var homeScore: String {
-        if !match.homeStatus.isEmpty { return match.homeStatus }
-        guard let label = match.scoreLabel, !label.isEmpty else { return "" }
-        return label
-    }
-
-    private var awayScore: String { match.awayStatus }
+    private let teamSecondary = Color(red: 0.749, green: 0.749, blue: 0.780)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center) {
-                statusPill
-                Spacer(minLength: 8)
-                Text(metaRight)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color(red: 0.50, green: 0.50, blue: 0.55))
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
+        HStack(alignment: .center, spacing: 12) {
+            if match.status == .live {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Theme.liveRed)
+                    .frame(width: 3)
+                    .padding(.vertical, 4)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
-                teamRow(name: match.homeName, code: match.homeCode, logo: match.homeLogoURL, score: homeScore)
-                teamRow(name: match.awayName, code: match.awayCode, logo: match.awayLogoURL, score: awayScore)
+            VStack(alignment: .leading, spacing: 10) {
+                teamLine(
+                    name: match.homeName,
+                    code: match.homeCode,
+                    logo: match.homeLogoURL,
+                    score: match.homeStatus,
+                    emphasized: match.status != .upcoming || !match.homeStatus.isEmpty
+                )
+                teamLine(
+                    name: match.awayName,
+                    code: match.awayCode,
+                    logo: match.awayLogoURL,
+                    score: match.awayStatus,
+                    emphasized: false
+                )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            if !statusLine.isEmpty {
-                Text(statusLine)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.accent)
-            }
+            VStack(alignment: .trailing, spacing: 6) {
+                statusBadge
 
-            if !venueLine.isEmpty {
-                Text(venueLine)
+                Text(statusDetail)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color(red: 0.50, green: 0.50, blue: 0.55))
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Theme.card)
-        )
-    }
-
-    @ViewBuilder
-    private var statusPill: some View {
-        let text: String = {
-            switch match.status {
-            case .live: return "LIVE"
-            case .upcoming: return "UPCOMING"
-            case .completed: return "COMPLETED"
-            }
-        }()
-        Text(text)
-            .font(.system(size: 11, weight: .heavy))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(match.status == .live ? Theme.liveRed : Color(white: 0.22))
-            )
-    }
-
-    private var metaRight: String {
-        switch match.status {
-        case .live:
-            return match.matchLabel == "Match" ? match.timeLabel : match.matchLabel
-        case .upcoming:
-            let time = match.watchAtTime.isEmpty ? match.timeLabel : match.watchAtTime
-            return [dayHint, time].filter { !$0.isEmpty }.joined(separator: " • ")
-        case .completed:
-            return match.timeLabel == (match.resultSummary ?? "") ? "" : match.timeLabel
-        }
-    }
-
-    private var statusLine: String {
-        if match.status == .completed, let summary = match.resultSummary, !summary.isEmpty {
-            return summary
-        }
-        if match.status == .live,
-           match.homeStatus.isEmpty,
-           match.awayStatus.isEmpty,
-           let score = match.scoreLabel, !score.isEmpty {
-            return score
-        }
-        if match.status == .upcoming, match.matchLabel != "Match", !match.matchLabel.isEmpty {
-            return match.matchLabel
-        }
-        return ""
-    }
-
-    private var venueLine: String {
-        match.venue
-    }
-
-    private var dayHint: String {
-        guard let date = match.scheduledAt else { return match.dayKey }
-        if Calendar.current.isDateInToday(date) { return "Today" }
-        if Calendar.current.isDateInTomorrow(date) { return "Tomorrow" }
-        let f = DateFormatter()
-        f.dateFormat = "d MMM"
-        return f.string(from: date)
-    }
-
-    private func teamRow(name: String, code: String, logo: URL?, score: String) -> some View {
-        HStack(spacing: 12) {
-            teamLogo(code: code, logo: logo)
-            Text(name)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Spacer(minLength: 8)
-            if !score.isEmpty {
-                Text(score)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
                     .minimumScaleFactor(0.8)
             }
+            .frame(width: 88, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(
+            match.status == .live
+                ? Theme.liveRed.opacity(0.04)
+                : Color.clear
+        )
+        .contentShape(Rectangle())
+    }
+
+    private var statusDetail: String {
+        switch match.status {
+        case .live:
+            return match.scoreLabel ?? "In progress"
+        case .upcoming:
+            if !match.watchAtTime.isEmpty { return match.watchAtTime }
+            return match.timeLabel
+        case .completed:
+            if let result = match.resultSummary, !result.isEmpty {
+                return result
+            }
+            return match.timeLabel
         }
     }
 
-    private func teamLogo(code: String, logo: URL?) -> some View {
+    private var statusBadge: some View {
+        Group {
+            switch match.status {
+            case .live:
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 5, height: 5)
+                    Text("LIVE")
+                        .font(.system(size: 10, weight: .black))
+                        .tracking(0.4)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Theme.liveRed))
+
+            case .upcoming:
+                Text("UPCOMING")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.3)
+                    .foregroundStyle(Color(red: 0.96, green: 0.72, blue: 0.28))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.14))
+                            .overlay(
+                                Capsule().stroke(Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.35), lineWidth: 1)
+                            )
+                    )
+
+            case .completed:
+                Text("COMPLETED")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.3)
+                    .foregroundStyle(Color(red: 0.55, green: 0.82, blue: 0.65))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color(red: 0.20, green: 0.70, blue: 0.40).opacity(0.12))
+                            .overlay(
+                                Capsule().stroke(Color(red: 0.20, green: 0.70, blue: 0.40).opacity(0.28), lineWidth: 1)
+                            )
+                    )
+            }
+        }
+    }
+
+    private func teamLine(name: String, code: String, logo: URL?, score: String, emphasized: Bool) -> some View {
+        HStack(spacing: 10) {
+            teamFlag(code: code, logo: logo)
+
+            Text(name)
+                .font(.system(size: 14, weight: emphasized ? .semibold : .medium))
+                .foregroundStyle(emphasized ? .white : teamSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer(minLength: 4)
+
+            if !score.isEmpty {
+                Text(score)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(emphasized ? .white : teamSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+    }
+
+    private func teamFlag(code: String, logo: URL?) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color(red: 0.14, green: 0.15, blue: 0.19))
+            Circle()
+                .fill(Color.white.opacity(0.08))
             if let logo {
                 AsyncImage(url: logo) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()
                     default:
-                        Text(code)
-                            .font(.system(size: 7, weight: .heavy))
-                            .foregroundStyle(.white)
+                        Text(String(code.prefix(2)).uppercased())
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.85))
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                .clipShape(Circle())
             } else {
-                Text(code)
-                    .font(.system(size: 7, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
+                Text(String(code.prefix(2)).uppercased())
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.85))
             }
         }
-        .frame(width: 20, height: 14)
+        .frame(width: 26, height: 26)
+        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
     }
 }

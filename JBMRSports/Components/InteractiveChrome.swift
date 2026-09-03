@@ -28,29 +28,42 @@ struct FullscreenPlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
             StreamVideoLayer(player: playback.player, videoGravity: .resizeAspect)
                 .ignoresSafeArea()
+
             VStack {
                 HStack {
                     Text(title)
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
                     Spacer()
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.accent)
                 }
-                .padding()
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+
                 Spacer()
+
                 Button { playback.toggle() } label: {
                     Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 52))
+                        .font(.system(size: 56))
                         .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 8)
                 }
-                .padding(.bottom, 40)
+                .padding(.bottom, 36)
             }
         }
-        .onDisappear { playback.pause() }
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
+        .onAppear { OrientationManager.enableLandscape() }
+        .onDisappear {
+            playback.pause()
+            OrientationManager.restorePortrait()
+        }
     }
 }
 

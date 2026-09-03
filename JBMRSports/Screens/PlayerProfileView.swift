@@ -4,7 +4,7 @@ struct PlayerProfileView: View {
     @Binding var tab: AppTab
     @Binding var showSearch: Bool
     @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
-    @AppStorage("hasSignedIn") private var hasSignedIn = false
+    @EnvironmentObject private var authStore: AuthStore
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -18,10 +18,10 @@ struct PlayerProfileView: View {
                         .overlay(Circle().stroke(Theme.accent.opacity(0.5), lineWidth: 1.5))
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Rahul Sharma")
+                        Text(authStore.displayName)
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(.white)
-                        Text("rahul.sharma@email.com")
+                        Text(authStore.phoneLabel)
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.muted)
                         Text("Premium Member")
@@ -39,24 +39,32 @@ struct PlayerProfileView: View {
                 .padding(.bottom, 20)
 
                 VStack(spacing: 0) {
-                    menuLink(icon: "bookmark", title: "My Watchlist") {
-                        showSearch = true
+                    menuNav(icon: "bookmark", title: "My Watchlist") {
+                        WatchlistView(tab: $tab, showSearch: $showSearch)
                     }
                     menuNav(icon: "clock.arrow.circlepath", title: "Watch History") {
-                        MyLibraryView().environmentObject(downloadLibrary)
+                        WatchHistoryView(tab: $tab, showSearch: $showSearch)
                     }
                     menuNav(icon: "arrow.down.circle", title: "Downloads") {
-                        MyLibraryView().environmentObject(downloadLibrary)
+                        MyLibraryView()
+                            .environmentObject(downloadLibrary)
                     }
                     menuNav(icon: "video", title: "My Reels") {
-                        MyLibraryView().environmentObject(downloadLibrary)
+                        MyLibraryView()
+                            .environmentObject(downloadLibrary)
                     }
-                    menuRow(icon: "creditcard", title: "Subscription & Plans")
-                    menuRow(icon: "gearshape", title: "App Settings")
-                    menuRow(icon: "questionmark.circle", title: "Help & Support")
+                    menuNav(icon: "creditcard", title: "Subscription & Plans") {
+                        SubscriptionView()
+                    }
+                    menuNav(icon: "gearshape", title: "App Settings") {
+                        SettingsView()
+                    }
+                    menuNav(icon: "questionmark.circle", title: "Help & Support") {
+                        HelpSupportView()
+                    }
 
                     Button {
-                        hasSignedIn = false
+                        authStore.signOut()
                     } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "rectangle.portrait.and.arrow.right")
@@ -109,13 +117,6 @@ struct PlayerProfileView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
         }
-    }
-
-    private func menuLink(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            menuRow(icon: icon, title: title)
-        }
-        .buttonStyle(.plain)
     }
 
     private func menuNav<D: View>(icon: String, title: String, @ViewBuilder destination: () -> D) -> some View {

@@ -23,12 +23,13 @@ final class StreamPlayback: ObservableObject {
     private var statusObserver: NSKeyValueObservation?
     private let looping: Bool
 
-    init(url: URL?, autoplay: Bool = false, looping: Bool = false) {
+    init(url: URL?, autoplay: Bool = false, looping: Bool = false, muted: Bool = false) {
         self.looping = looping
         self.hasMedia = url != nil
         if let url {
             let item = AVPlayerItem(url: url)
             player = AVPlayer(playerItem: item)
+            player.isMuted = muted
             player.automaticallyWaitsToMinimizeStalling = true
             player.actionAtItemEnd = looping ? .none : .pause
 
@@ -174,6 +175,7 @@ struct StreamVideoLayer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
+        view.isUserInteractionEnabled = false
         view.playerLayer.player = player
         view.playerLayer.videoGravity = videoGravity
         view.backgroundColor = .black
