@@ -93,7 +93,7 @@ struct PlayerProfileView: View {
         .background(Theme.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            AppHeader(onAvatar: { tab = .profile })
+            AppHeader(onAvatar: { tab = .profile }, onSearch: { showSearch = true })
                 .background(Theme.background)
         }
     }

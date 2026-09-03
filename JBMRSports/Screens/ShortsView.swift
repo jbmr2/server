@@ -95,7 +95,7 @@ struct ShortsView: View {
     }
 
     private var topBar: some View {
-        AppHeader(onAvatar: { tab = .profile })
+        AppHeader(onAvatar: { tab = .profile }, onSearch: { showSearch = true })
             .padding(.top, 4)
     }
 }

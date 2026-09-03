@@ -1,3 +1,4 @@
+import FirebaseCore
 import SwiftUI
 
 @main
@@ -32,13 +33,12 @@ struct JBMRSportsApp: App {
                         .environmentObject(userLibrary)
                         .environmentObject(DeepLinkRouter.shared)
                 } else {
-                    LoginView { phone in
-                        authStore.signIn(phone: phone)
-                    }
+                    LoginView()
                 }
             }
             .preferredColorScheme(.dark)
             .task {
+                _ = NetworkMonitor.shared
                 await cricketStore.refresh()
             }
             .onOpenURL { url in

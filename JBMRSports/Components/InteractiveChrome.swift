@@ -187,3 +187,81 @@ struct ReelGuideSheet: View {
         .preferredColorScheme(.dark)
     }
 }
+
+struct PointsTablePanel: View {
+    let rows: [PointsTableRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("POINTS TABLE")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(Theme.accent)
+                .padding(.horizontal, 16)
+
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Text("#").frame(width: 28, alignment: .leading)
+                    Text("Team").frame(maxWidth: .infinity, alignment: .leading)
+                    Text("P").frame(width: 28)
+                    Text("W").frame(width: 28)
+                    Text("L").frame(width: 28)
+                    Text("NRR").frame(width: 48, alignment: .trailing)
+                    Text("Pts").frame(width: 36, alignment: .trailing)
+                }
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.muted)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(white: 0.11))
+
+                if rows.isEmpty {
+                    Text("Points table will appear after results")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .background(Color(white: 0.08))
+                } else {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        HStack(spacing: 0) {
+                            Text("\(index + 1)")
+                                .frame(width: 28, alignment: .leading)
+                                .foregroundStyle(Theme.mutedSoft)
+                            Text(row.teamName)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .foregroundStyle(.white)
+                            Text("\(row.played)").frame(width: 28)
+                            Text("\(row.won)").frame(width: 28)
+                            Text("\(row.lost)").frame(width: 28)
+                            Text(row.nrr)
+                                .frame(width: 48, alignment: .trailing)
+                                .foregroundStyle(Theme.muted)
+                            Text("\(row.points)")
+                                .frame(width: 36, alignment: .trailing)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(index % 2 == 0 ? Color(white: 0.08) : Color(white: 0.06))
+
+                        if index < rows.count - 1 {
+                            Rectangle()
+                                .fill(Color.white.opacity(0.06))
+                                .frame(height: 1)
+                                .padding(.leading, 12)
+                        }
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(red: 0.07, green: 0.075, blue: 0.10))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(white: 0.12), lineWidth: 1))
+            )
+            .padding(.horizontal, 12)
+        }
+        .padding(.top, 14)
+    }
+}

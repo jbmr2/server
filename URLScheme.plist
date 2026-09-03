@@ -6,10 +6,11 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.jbmrsports.ott</string>
+			<string>in.jbmrsports.ott</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>jbmrsports</string>
+				<string>com.googleusercontent.apps.692709551364-o40rru1l3t6h26li8uegd5jq85p4e17q</string>
 			</array>
 		</dict>
 	</array>

@@ -11,6 +11,8 @@ struct MatchCenterView: View {
     @EnvironmentObject private var reelStore: ReelStudioStore
     @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
     @EnvironmentObject private var userLibrary: UserLibraryStore
+    @ObservedObject private var networkMonitor = NetworkMonitor.shared
+    @AppStorage(AppSettings.wifiOnlyKey) private var wifiOnlyStreaming = false
     @State private var section: CenterSection = .scorecard
     @StateObject private var playback: StreamPlayback
     @StateObject private var detailStore = MatchDetailStore()
@@ -25,7 +27,11 @@ struct MatchCenterView: View {
         self._tab = tab
         self._showSearch = showSearch
         self.embedsInTab = embedsInTab
-        _playback = StateObject(wrappedValue: StreamPlayback(url: match.videoURL, autoplay: true, looping: true))
+        _playback = StateObject(wrappedValue: StreamPlayback(
+            url: match.videoURL,
+            autoplay: AppSettings.autoPlay,
+            looping: true
+        ))
         _currentPlayURL = State(initialValue: match.videoURL)
     }
 
@@ -107,6 +113,9 @@ struct MatchCenterView: View {
         .onDisappear {
             detailStore.stopLivePolling()
         }
+        .onAppear { enforceStreamingPolicy() }
+        .onChange(of: networkMonitor.isOnWifi) { _, _ in enforceStreamingPolicy() }
+        .onChange(of: wifiOnlyStreaming) { _, _ in enforceStreamingPolicy() }
         .sheet(isPresented: $showShare) {
             ShareSheet(items: shareItems)
         }
@@ -331,6 +340,16 @@ struct MatchCenterView: View {
             .frame(height: playerHeight)
 
             matchInfoBar
+
+            if streamingBlocked {
+                Text("Wi-Fi only streaming is on — connect to Wi-Fi to watch live")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Theme.card)
+            }
         }
         .onDisappear { playback.pause() }
     }
@@ -966,43 +985,17 @@ struct MatchCenterView: View {
     }
 
     private var pointsTableBlock: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("POINTS TABLE")
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundStyle(Theme.accent)
-                .padding(.horizontal, 16)
+        PointsTablePanel(rows: store.pointsTable(forMatchId: match.id))
+    }
 
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    Text("#").frame(width: 28, alignment: .leading)
-                    Text("Team").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("P").frame(width: 28)
-                    Text("W").frame(width: 28)
-                    Text("L").frame(width: 28)
-                    Text("NRR").frame(width: 48, alignment: .trailing)
-                    Text("Pts").frame(width: 36, alignment: .trailing)
-                }
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Theme.muted)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color(white: 0.11))
+    private var streamingBlocked: Bool {
+        wifiOnlyStreaming && !networkMonitor.isOnWifi
+    }
 
-                Text("Points table will appear when available")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.muted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .background(Color(white: 0.08))
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(red: 0.07, green: 0.075, blue: 0.10))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(white: 0.12), lineWidth: 1))
-            )
-            .padding(.horizontal, 12)
+    private func enforceStreamingPolicy() {
+        if streamingBlocked {
+            playback.pause()
         }
-        .padding(.top, 14)
     }
 }
 

@@ -39,6 +39,7 @@ struct UserAvatarButton: View {
 struct AppHeader: View {
     var onLogo: (() -> Void)? = nil
     var onAvatar: (() -> Void)? = nil
+    var onSearch: (() -> Void)? = nil
     var showsAvatar: Bool = true
 
     var body: some View {
@@ -54,6 +55,17 @@ struct AppHeader: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let onSearch {
+                Button(action: onSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Search")
+            }
 
             if showsAvatar, let onAvatar {
                 UserAvatarButton(action: onAvatar)

@@ -1,13 +1,12 @@
 import SwiftUI
 
 struct LoginView: View {
-    var onSignedIn: (String) -> Void
+    @ObservedObject private var authStore = AuthStore.shared
 
     @State private var mobile = ""
     @State private var otp = ""
     @State private var otpSent = false
     @State private var showLegal = false
-    @State private var errorMessage: String?
 
     private let loginBg = Color(red: 8 / 255, green: 9 / 255, blue: 14 / 255)
     private let fieldBG = Color(red: 18 / 255, green: 19 / 255, blue: 26 / 255)
@@ -39,7 +38,7 @@ struct LoginView: View {
                 Text(otpSent ? "Verify OTP" : "Login or Sign Up")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.white)
-                Text(otpSent ? "+91 \(mobile) par OTP bheja gaya (demo: 123456)" : "Enter your mobile number to get started")
+                Text(otpSent ? "+91 \(mobile) par OTP bheja gaya" : "Enter your mobile number to get started")
                     .font(.system(size: 14))
                     .foregroundStyle(muted)
             }
@@ -69,6 +68,7 @@ struct LoginView: View {
                             .font(.system(size: 15))
                             .foregroundStyle(.white)
                             .tint(Theme.accent)
+                            .disabled(authStore.isLoading)
                             .onChange(of: mobile) { _, newValue in
                                 mobile = String(newValue.filter(\.isWholeNumber).prefix(10))
                             }
@@ -83,6 +83,7 @@ struct LoginView: View {
                         .foregroundStyle(.white)
                         .tint(Theme.accent)
                         .multilineTextAlignment(.center)
+                        .disabled(authStore.isLoading)
                         .padding(.horizontal, 16)
                         .frame(height: 56)
                         .background(fieldBackground)
@@ -93,47 +94,47 @@ struct LoginView: View {
                     Button("Change number") {
                         otpSent = false
                         otp = ""
-                        errorMessage = nil
+                        authStore.clearError()
                     }
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(authStore.isLoading)
                 }
 
                 Button {
-                    if !otpSent {
-                        let digits = mobile.filter(\.isWholeNumber)
-                        guard digits.count == 10 else {
-                            errorMessage = "10 digit mobile number enter karo"
-                            return
+                    Task {
+                        if !otpSent {
+                            await authStore.sendOTP(phone: mobile)
+                            if authStore.errorMessage == nil {
+                                otpSent = true
+                            }
+                        } else {
+                            let ok = await authStore.verifyOTP(otp)
+                            if ok { otp = "" }
                         }
-                        errorMessage = nil
-                        otpSent = true
-                    } else {
-                        guard otp.count == 6 else {
-                            errorMessage = "6 digit OTP enter karo"
-                            return
-                        }
-                        guard otp == "123456" else {
-                            errorMessage = "Galat OTP — demo ke liye 123456 use karo"
-                            return
-                        }
-                        errorMessage = nil
-                        onSignedIn(mobile.filter(\.isWholeNumber))
                     }
                 } label: {
-                    Text(otpSent ? "Verify & Continue" : "Get OTP")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Theme.accent)
-                        )
-                        .shadow(color: Theme.accent.opacity(0.2), radius: 8, y: 8)
+                    Group {
+                        if authStore.isLoading {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text(otpSent ? "Verify & Continue" : "Get OTP")
+                                .font(.system(size: 16, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Theme.accent)
+                    )
+                    .shadow(color: Theme.accent.opacity(0.2), radius: 8, y: 8)
                 }
                 .buttonStyle(.plain)
+                .disabled(authStore.isLoading)
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)
@@ -155,12 +156,12 @@ struct LoginView: View {
             LegalSheet()
         }
         .alert("Login", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
+            get: { authStore.errorMessage != nil },
+            set: { if !$0 { authStore.clearError() } }
         )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(errorMessage ?? "")
+            Text(authStore.errorMessage ?? "")
         }
     }
 

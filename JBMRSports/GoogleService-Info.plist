@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>692709551364-u1om272m0u6mdvc8ue3spam48bgrpiuf.apps.googleusercontent.com</string>
+	<string>692709551364-o40rru1l3t6h26li8uegd5jq85p4e17q.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.692709551364-u1om272m0u6mdvc8ue3spam48bgrpiuf</string>
+	<string>com.googleusercontent.apps.692709551364-o40rru1l3t6h26li8uegd5jq85p4e17q</string>
 	<key>API_KEY</key>
 	<string>AIzaSyDrrbrXoD3VHnWbw5WexMbekQwVlaiygKQ</string>
 	<key>GCM_SENDER_ID</key>
@@ -13,7 +13,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>jbmrsportsott</string>
+	<string>in.jbmrsports.ott</string>
 	<key>PROJECT_ID</key>
 	<string>ncrplt20-1c022</string>
 	<key>STORAGE_BUCKET</key>
@@ -29,7 +29,7 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:692709551364:ios:45bb82655a5626ab45f451</string>
+	<string>1:692709551364:ios:79dc736ba5a2a50e45f451</string>
 	<key>DATABASE_URL</key>
 	<string>https://ncrplt20-1c022-default-rtdb.asia-southeast1.firebasedatabase.app</string>
 </dict>

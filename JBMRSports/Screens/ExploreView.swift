@@ -105,7 +105,7 @@ struct ExploreView: View {
         .refreshable { await store.refresh(force: true) }
         .background(Theme.background.ignoresSafeArea())
         .safeAreaInset(edge: .top, spacing: 0) {
-            AppHeader(onAvatar: { tab = .profile })
+            AppHeader(onAvatar: { tab = .profile }, onSearch: { showSearch = true })
                 .background(Theme.background)
         }
         .toolbar(.hidden, for: .navigationBar)

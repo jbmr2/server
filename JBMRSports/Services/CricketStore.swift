@@ -433,7 +433,14 @@ final class CricketStore: ObservableObject {
                 imageURL: CrickAPI.absoluteURL(from: $0.logoUrl)
             )
         }
-        return Array((live + Array(upcoming.prefix(3)) + highlightSlides).prefix(6))
+        var slides: [FeaturedMatch] = []
+        var seen = Set<String>()
+        for item in live + Array(upcoming.prefix(3)) + highlightSlides {
+            guard seen.insert(item.id).inserted else { continue }
+            slides.append(item)
+            if slides.count >= 6 { break }
+        }
+        return slides
     }
 
     private func uniqueFeatured(_ matches: [FeaturedMatch]) -> [FeaturedMatch] {
@@ -445,6 +452,52 @@ final class CricketStore: ObservableObject {
             seen.insert(key)
             return true
         }
+    }
+
+    func pointsTable(forMatchId matchId: String) -> [PointsTableRow] {
+        guard let seed = scheduleMatches.first(where: { $0.id == matchId }) else { return [] }
+        let tournamentMatches = scheduleMatches.filter { $0.tournament == seed.tournament }
+        return Self.computePointsTable(from: tournamentMatches)
+    }
+
+    static func computePointsTable(from matches: [ScheduleMatch]) -> [PointsTableRow] {
+        var map: [String: (name: String, code: String, played: Int, won: Int, lost: Int)] = [:]
+        for m in matches where m.status == .completed {
+            for (name, code) in [(m.homeName, m.homeCode), (m.awayName, m.awayCode)] {
+                var entry = map[name] ?? (name, code, 0, 0, 0)
+                entry.played += 1
+                map[name] = entry
+            }
+            if let summary = m.resultSummary?.lowercased() {
+                for key in map.keys {
+                    let code = map[key]!.code.lowercased()
+                    if summary.contains(key.lowercased())
+                        || summary.hasPrefix("\(code) ")
+                        || summary.contains("\(code) won") {
+                        map[key]?.won += 1
+                        break
+                    }
+                }
+            }
+        }
+        for key in map.keys {
+            map[key]!.lost = max(0, map[key]!.played - map[key]!.won)
+        }
+        return map.values
+            .map {
+                PointsTableRow(
+                    id: $0.code + $0.name,
+                    rank: 0,
+                    teamCode: $0.code,
+                    teamName: $0.name,
+                    played: $0.played,
+                    won: $0.won,
+                    lost: $0.lost,
+                    nrr: "-",
+                    points: $0.won * 2
+                )
+            }
+            .sorted { $0.points == $1.points ? $0.won > $1.won : $0.points > $1.points }
     }
 }
 
