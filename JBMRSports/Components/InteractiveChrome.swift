@@ -14,16 +14,11 @@ struct AirPlayRoutePicker: UIViewRepresentable {
 }
 
 struct FullscreenPlayerView: View {
-    let url: URL
-    let title: String
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var playback: StreamPlayback
-
-    init(url: URL, title: String) {
-        self.url = url
-        self.title = title
-        _playback = StateObject(wrappedValue: StreamPlayback(url: url, autoplay: true, looping: false))
-    }
+    @ObservedObject var playback: StreamPlayback
+    @Binding var isPresented: Bool
+    var showAdOnAppear: Bool = false
+    @EnvironmentObject private var store: CricketStore
+    @State private var showPlayerAd = false
 
     var body: some View {
         ZStack {
@@ -33,35 +28,57 @@ struct FullscreenPlayerView: View {
                 .ignoresSafeArea()
 
             VStack {
-                HStack {
-                    Text(title)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Spacer()
-                    Button("Done") { dismiss() }
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-
                 Spacer()
 
-                Button { playback.toggle() } label: {
-                    Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.4), radius: 8)
+                HStack(spacing: 10) {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isPresented = false
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(Circle().fill(.black.opacity(0.45)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+
+                HStack(spacing: 10) {
+                    Button { playback.toggle() } label: {
+                        Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 56))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 8)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.bottom, 36)
+            }
+
+            if showPlayerAd, store.adsEnabled {
+                PlayerVideoAdOverlay(player: playback.player) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showPlayerAd = false
+                    }
+                    playback.play()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .onAppear { OrientationManager.enableLandscape() }
+        .onAppear {
+            OrientationManager.enableLandscape()
+            if showAdOnAppear, store.adsEnabled {
+                showPlayerAd = true
+            }
+        }
         .onDisappear {
-            playback.pause()
             OrientationManager.restorePortrait()
         }
     }

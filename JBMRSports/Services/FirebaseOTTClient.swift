@@ -1,11 +1,17 @@
 import Foundation
 
+#if canImport(FirebaseDatabase)
+import FirebaseDatabase
+#endif
+
 enum FirebaseOTT {
     static let feedURL = URL(string: "https://ncrplt20-1c022-default-rtdb.asia-southeast1.firebasedatabase.app/ott.json")!
+    static let databaseBase = "https://ncrplt20-1c022-default-rtdb.asia-southeast1.firebasedatabase.app"
 }
 
 struct FirebaseOTTFeed: Decodable {
     let meta: Meta?
+    let settings: Settings?
     let tournaments: [String: FirebaseTournament]?
     let highlights: [String: FirebaseHighlight]?
 
@@ -13,6 +19,10 @@ struct FirebaseOTTFeed: Decodable {
         let source: String?
         let updatedAt: String?
         let note: String?
+    }
+
+    struct Settings: Decodable {
+        let adsEnabled: Bool?
     }
 }
 
@@ -113,12 +123,19 @@ enum FirebaseOTTClient {
     }
 
     static func fetchCompleteMatch(matchId: String) async throws -> APICompleteMatch? {
-        guard !matchId.isEmpty,
-              let url = URL(string: "https://ncrplt20-1c022-default-rtdb.asia-southeast1.firebasedatabase.app/ott/matchDetails/\(matchId).json")
-        else { return nil }
+        try await fetchMatchDetail(matchId: matchId, cachePolicy: .reloadRevalidatingCacheData)
+    }
+
+    private static func fetchMatchDetail(
+        matchId: String,
+        cachePolicy: URLRequest.CachePolicy
+    ) async throws -> APICompleteMatch? {
+        guard !matchId.isEmpty else { return nil }
+        let components = URLComponents(string: "\(FirebaseOTT.databaseBase)/ott/matchDetails/\(matchId).json")!
+        guard let url = components.url else { return nil }
         var req = URLRequest(url: url)
-        req.timeoutInterval = 25
-        req.cachePolicy = .reloadRevalidatingCacheData
+        req.timeoutInterval = 8
+        req.cachePolicy = cachePolicy
         let (data, response) = try await NetworkSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
@@ -126,6 +143,37 @@ enum FirebaseOTTClient {
         guard !data.isEmpty, data != Data("null".utf8) else { return nil }
         do {
             return try JSONDecoder().decode(APICompleteMatch.self, from: data)
+        } catch {
+            return nil
+        }
+    }
+
+    #if canImport(FirebaseDatabase)
+    static func decodeCompleteMatch(snapshot: DataSnapshot) -> APICompleteMatch? {
+        guard snapshot.exists(),
+              let dict = snapshot.value as? [String: Any],
+              JSONSerialization.isValidJSONObject(dict),
+              let data = try? JSONSerialization.data(withJSONObject: dict)
+        else { return nil }
+        return try? JSONDecoder().decode(APICompleteMatch.self, from: data)
+    }
+    #endif
+
+    /// Fresh ball clips from RTDB — `ott.json` feed cache can lag behind admin cuts.
+    static func fetchBallVideos(tournamentId: String, matchId: String) async -> [String: FirebaseBall]? {
+        guard !tournamentId.isEmpty, !matchId.isEmpty else { return nil }
+        let path = "\(FirebaseOTT.databaseBase)/ott/tournaments/\(tournamentId)/matches/\(matchId)/balls.json"
+        guard let url = URL(string: path) else { return nil }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 8
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        do {
+            let (data, response) = try await NetworkSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return nil
+            }
+            guard !data.isEmpty, data != Data("null".utf8) else { return nil }
+            return try JSONDecoder().decode([String: FirebaseBall].self, from: data)
         } catch {
             return nil
         }

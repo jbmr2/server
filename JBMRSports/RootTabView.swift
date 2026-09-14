@@ -51,6 +51,9 @@ struct RootTabView: View {
         .background(Theme.background.ignoresSafeArea())
         .sheet(isPresented: $showSearch) {
             SearchSheet(tab: $tab, showSearch: $showSearch)
+                .environmentObject(store)
+                .environmentObject(reelStore)
+                .environmentObject(downloadLibrary)
                 .environmentObject(userLibrary)
         }
         .sheet(isPresented: $showCreate) {
@@ -106,6 +109,14 @@ struct RootTabView: View {
             tab = .home
             homePath = NavigationPath()
             homePath.append(AppNavigationRoute.tournament(id))
+        case .tab(let name):
+            switch name {
+            case "home": tab = .home
+            case "schedule": tab = .schedule
+            case "shorts": tab = .shorts
+            case "profile", "reel": tab = .profile
+            default: tab = .home
+            }
         }
 
         deepLinkRouter.clear()
@@ -209,6 +220,8 @@ struct SearchSheet: View {
     @Binding var showSearch: Bool
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: CricketStore
+    @EnvironmentObject private var reelStore: ReelStudioStore
+    @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
     @EnvironmentObject private var userLibrary: UserLibraryStore
     @State private var query = ""
 
@@ -235,6 +248,10 @@ struct SearchSheet: View {
                         HStack(spacing: 8) {
                             NavigationLink {
                                 MatchCenterView(match: match, tab: $tab, showSearch: $showSearch)
+                                    .environmentObject(store)
+                                    .environmentObject(reelStore)
+                                    .environmentObject(downloadLibrary)
+                                    .environmentObject(userLibrary)
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(match.vsLabel)

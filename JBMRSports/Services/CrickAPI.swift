@@ -432,8 +432,15 @@ enum CrickAPIClient {
 
     /// Prefer `matchId` (unique). `matchSeq` alone can collide across tournaments.
     static func fetchCompleteMatch(matchId: String? = nil, matchSeq: Int? = nil) async throws -> APICompleteMatch {
+        try await fetchLiveCompleteMatch(matchId: matchId, matchSeq: matchSeq)
+    }
+
+    /// Live scorecard — no HTTP cache, cache-bust every call.
+    static func fetchLiveCompleteMatch(matchId: String? = nil, matchSeq: Int? = nil) async throws -> APICompleteMatch {
         var components = URLComponents(url: CrickAPI.baseURL.appendingPathComponent("api/matches/complete-public"), resolvingAgainstBaseURL: false)!
-        var items: [URLQueryItem] = []
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "_t", value: String(Int(Date().timeIntervalSince1970 * 1000))),
+        ]
         if let matchId, !matchId.isEmpty {
             items.append(URLQueryItem(name: "matchId", value: matchId))
         } else if let matchSeq {
@@ -443,7 +450,30 @@ enum CrickAPIClient {
         }
         components.queryItems = items
         guard let url = components.url else { throw URLError(.badURL) }
-        return try await get(url, as: APICompleteMatch.self)
+        return try await liveGet(url, as: APICompleteMatch.self)
+    }
+
+    private static let liveSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }()
+
+    private static func liveGet<T: Decodable>(_ url: URL, as type: T.Type) async throws -> T {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        request.timeoutInterval = 15
+
+        let (data, response) = try await liveSession.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(type, from: data)
     }
 
     private static func get<T: Decodable>(_ url: URL, as type: T.Type) async throws -> T {

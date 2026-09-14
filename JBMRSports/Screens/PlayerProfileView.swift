@@ -24,14 +24,6 @@ struct PlayerProfileView: View {
                         Text(authStore.phoneLabel)
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.muted)
-                        Text("Premium Member")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .overlay(
-                                Capsule().stroke(Theme.accent, lineWidth: 1)
-                            )
                     }
                     Spacer(minLength: 0)
                 }
@@ -52,9 +44,6 @@ struct PlayerProfileView: View {
                     menuNav(icon: "video", title: "My Reels") {
                         MyLibraryView()
                             .environmentObject(downloadLibrary)
-                    }
-                    menuNav(icon: "creditcard", title: "Subscription & Plans") {
-                        SubscriptionView()
                     }
                     menuNav(icon: "gearshape", title: "App Settings") {
                         SettingsView()

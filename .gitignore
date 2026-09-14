@@ -4,3 +4,9 @@ DerivedData/
 *.xccheckout
 *.xcscmblueprint
 .build/
+
+.DS_Store
+.cursor/
+build/
+Builds/*.xcarchive/
+*.xcuserstate

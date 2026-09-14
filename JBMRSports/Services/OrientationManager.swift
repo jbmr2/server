@@ -1,5 +1,7 @@
+import FirebaseAuth
 import FirebaseCore
 import UIKit
+import UserNotifications
 
 enum OrientationManager {
     static var lock: UIInterfaceOrientationMask = .portrait
@@ -37,14 +39,80 @@ enum OrientationManager {
     }
 }
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        FirebaseBootstrap.validateConfiguration()
         FirebaseApp.configure()
+        FirebaseBootstrap.validateConfiguration()
+        DispatchQueue.main.async {
+            AuthStore.shared.attachAuthListenerIfNeeded()
+            FirebaseRealtime.configure()
+        }
+        UNUserNotificationCenter.current().delegate = self
+        registerForPhoneAuthNotifications(application)
+        configurePhoneAuthForSimulatorIfNeeded()
         return true
+    }
+
+    private func registerForPhoneAuthNotifications(_ application: UIApplication) {
+        // Phone Auth silent push ke liye permission popup zaroori nahi — seedha register karo.
+        application.registerForRemoteNotifications()
+    }
+
+    private func configurePhoneAuthForSimulatorIfNeeded() {
+        #if DEBUG
+        #if targetEnvironment(simulator)
+        Auth.auth().settings?.isAppVerificationDisabledForTesting = true
+        NSLog("JBMR Phone Auth: simulator testing mode ON — Firebase test number + fixed OTP use karo")
+        #endif
+        #endif
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        #if DEBUG
+        Auth.auth().setAPNSToken(deviceToken, type: .sandbox)
+        #else
+        Auth.auth().setAPNSToken(deviceToken, type: .prod)
+        #endif
+        NSLog("JBMR APNs token registered for Phone Auth")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        NSLog("JBMR APNs registration failed: %@", error.localizedDescription)
+    }
+
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        if Auth.auth().canHandle(url) {
+            return true
+        }
+        Task { @MainActor in
+            DeepLinkRouter.shared.handle(url: url)
+        }
+        return false
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        if Auth.auth().canHandleNotification(userInfo) {
+            completionHandler(.noData)
+            return
+        }
+        completionHandler(.noData)
     }
 
     func application(

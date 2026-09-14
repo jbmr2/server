@@ -125,7 +125,6 @@ struct ShortReelPage: View {
     @StateObject private var playback: StreamPlayback
     @State private var liked = false
     @State private var following = false
-    @State private var showComments = false
     @State private var showShare = false
 
     init(
@@ -273,7 +272,6 @@ struct ShortReelPage: View {
                     sideButton(icon: "heart.fill", label: liked ? "Liked" : "Like", tint: liked ? Theme.liveRed : .white) {
                         liked.toggle()
                     }
-                    sideButton(icon: "bubble.right", label: "Chat") { showComments = true }
                     sideButton(icon: "arrow.up.right", label: "Share") { showShare = true }
 
                     Button(action: onEarn) {
@@ -315,17 +313,6 @@ struct ShortReelPage: View {
             if isActive { playback.play() }
         }
         .onDisappear { playback.pause() }
-        .sheet(isPresented: $showComments) {
-            NavigationStack {
-                List {
-                    Text("Comments is clip pe jaldi aayenge")
-                        .foregroundStyle(Theme.muted)
-                }
-                .navigationTitle("Comments")
-                .toolbar { Button("Done") { showComments = false } }
-            }
-            .presentationDetents([.medium, .large])
-        }
         .sheet(isPresented: $showShare) {
             ShareSheet(items: {
                 var items: [Any] = [clip.caption]

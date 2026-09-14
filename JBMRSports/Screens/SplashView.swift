@@ -55,7 +55,7 @@ struct SplashView: View {
             withAnimation(.easeInOut(duration: 1.4)) {
                 progress = 1
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 onFinished()
             }
         }

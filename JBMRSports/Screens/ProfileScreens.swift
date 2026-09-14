@@ -137,45 +137,6 @@ struct SettingsView: View {
     }
 }
 
-struct SubscriptionView: View {
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("JBMR Sports Premium")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
-                Text("₹99/month")
-                    .font(.system(size: 28, weight: .black))
-                    .foregroundStyle(Theme.accent)
-                featureRow("Ad-free live cricket")
-                featureRow("HD streams & ball-by-ball clips")
-                featureRow("Unlimited reel exports")
-                Text("Coming soon on App Store")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.accent.opacity(0.15)))
-                    .padding(.top, 8)
-            }
-            .padding(20)
-        }
-        .background(Theme.background.ignoresSafeArea())
-        .navigationTitle("Subscription & Plans")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func featureRow(_ text: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Theme.accent)
-            Text(text)
-                .font(.system(size: 14))
-                .foregroundStyle(.white.opacity(0.9))
-        }
-    }
-}
-
 struct HelpSupportView: View {
     var body: some View {
         List {

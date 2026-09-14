@@ -1,0 +1,18 @@
+{
+  "name": "jbmr-ott-functions",
+  "description": "JBMR OTT live sync + auto clip (runs 24/7 on Firebase)",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "deploy": "firebase deploy --only functions --project ncrplt20-1c022"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1121.0",
+    "@aws-sdk/s3-request-presigner": "^3.1121.0",
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^6.4.0"
+  },
+  "private": true
+}

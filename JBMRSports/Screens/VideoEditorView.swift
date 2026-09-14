@@ -3,6 +3,7 @@ import SwiftUI
 struct VideoEditorView: View {
     let clips: [ReelClipItem]
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: CricketStore
     @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
     @State private var selectedClipId: String
     @State private var showExport = false
@@ -126,9 +127,8 @@ struct VideoEditorView: View {
             .presentationDetents([.medium])
         }
         .fullScreenCover(isPresented: $showFullscreen) {
-            if let url = selectedClip?.videoURL ?? clips.first?.videoURL {
-                FullscreenPlayerView(url: url, title: selectedClip?.ballLabel ?? "Clip")
-            }
+            FullscreenPlayerView(playback: playback, isPresented: $showFullscreen)
+                .environmentObject(store)
         }
         .onChange(of: selectedClipId) { _, _ in
             if let url = selectedClip?.videoURL {

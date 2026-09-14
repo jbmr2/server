@@ -416,6 +416,16 @@ struct ScheduleMatch: Identifiable, Hashable {
     var awayStatus: String = ""
 }
 
+extension ScheduleMatch {
+    /// True when this match belongs on the given calendar day (live matches count for today).
+    func isOn(calendarDay date: Date) -> Bool {
+        let cal = Calendar.current
+        if cal.isDateInToday(date), status == .live { return true }
+        guard let scheduledAt else { return false }
+        return cal.isDate(scheduledAt, inSameDayAs: date)
+    }
+}
+
 struct ShortClip: Identifiable, Hashable {
     let id: String
     let creator: String

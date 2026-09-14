@@ -7,7 +7,15 @@ final class MatchDetailStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var detail: MatchDetail?
 
-    private var livePollTask: Task<Void, Never>?
+    private var apiLiveListener = CrickAPILiveListener()
+    private var feedProvider: (() -> FirebaseOTTFeed?)?
+    private var activeListenerMatchId: String?
+    private var activeTournamentId: String?
+    private var lastLiveSignature = ""
+    private var lastBallVideoSignature = ""
+    private var lastAPI: APICompleteMatch?
+    private var liveApplyTask: Task<Void, Never>?
+    private var ballVideoPollTask: Task<Void, Never>?
 
     func load(matchId: String, matchSeq: Int?, feed: FirebaseOTTFeed?) async {
         let hadDetail = detail != nil
@@ -28,13 +36,29 @@ final class MatchDetailStore: ObservableObject {
                 resolvedFeed = try await FirebaseOTTClient.fetchFeed()
             }
 
-            if let uploaded = try? await FirebaseOTTClient.fetchCompleteMatch(matchId: matchId) {
-                let pair = FirebaseOTTClient.findMatch(matchId: matchId, in: resolvedFeed)
-                detail = MatchDetailMapper.map(uploaded.mergingBallVideos(pair?.1.balls))
+            let pair = FirebaseOTTClient.findMatch(matchId: matchId, in: resolvedFeed)
+            activeTournamentId = pair?.0.tournamentId ?? apiTournamentId(from: pair)
+
+            if let api = try? await CrickAPIClient.fetchLiveCompleteMatch(matchId: matchId, matchSeq: matchSeq) {
+                activeTournamentId = api.matchInfo.tournament?.id ?? activeTournamentId
+                lastAPI = api
+                let ballVideos = await resolveBallVideos(matchId: matchId, api: api, feed: resolvedFeed)
+                lastBallVideoSignature = ballVideoSignature(ballVideos)
+                let mapped = await mapMatchDetail(api: api, ballVideos: ballVideos)
+                detail = mapped
                 errorMessage = nil
                 return
             }
-            guard let pair = FirebaseOTTClient.findMatch(matchId: matchId, in: resolvedFeed) else {
+
+            if let uploaded = try? await FirebaseOTTClient.fetchCompleteMatch(matchId: matchId) {
+                activeTournamentId = uploaded.matchInfo.tournament?.id ?? activeTournamentId
+                let ballVideos = await resolveBallVideos(matchId: matchId, api: uploaded, feed: resolvedFeed)
+                let mapped = await mapMatchDetail(api: uploaded, ballVideos: ballVideos)
+                detail = mapped
+                errorMessage = nil
+                return
+            }
+            guard let pair else {
                 if !hadDetail {
                     detail = nil
                     errorMessage = "Match Firebase mein nahi — Admin se tournament ON karo"
@@ -53,25 +77,149 @@ final class MatchDetailStore: ObservableObject {
         }
     }
 
-    func startLivePolling(matchId: String, isLive: Bool, feedProvider: @escaping () -> FirebaseOTTFeed?) {
-        stopLivePolling()
+    func startLiveListening(
+        matchId: String,
+        matchSeq: Int?,
+        isLive: Bool,
+        feedProvider: @escaping () -> FirebaseOTTFeed?
+    ) {
         guard isLive else { return }
-        livePollTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
-                guard !Task.isCancelled else { return }
-                await load(matchId: matchId, matchSeq: nil, feed: feedProvider())
-                if let status = detail?.status, !Self.isLiveStatus(status) {
-                    stopLivePolling()
-                    return
-                }
+        guard activeListenerMatchId != matchId else { return }
+        stopLiveListening()
+
+        self.feedProvider = feedProvider
+        self.activeListenerMatchId = matchId
+        lastLiveSignature = ""
+        lastBallVideoSignature = ""
+
+        apiLiveListener.start(matchId: matchId, matchSeq: matchSeq) { [weak self] api in
+            Task { @MainActor in
+                self?.applyLiveMatch(api, matchId: matchId)
+            }
+        } onMatchEnded: { [weak self] in
+            Task { @MainActor in
+                self?.stopLiveListening()
+            }
+        }
+
+        startBallVideoPolling(matchId: matchId)
+    }
+
+    func stopLiveListening() {
+        liveApplyTask?.cancel()
+        liveApplyTask = nil
+        ballVideoPollTask?.cancel()
+        ballVideoPollTask = nil
+        apiLiveListener.stop()
+        feedProvider = nil
+        activeListenerMatchId = nil
+        lastLiveSignature = ""
+        lastBallVideoSignature = ""
+        lastAPI = nil
+    }
+
+    func startLivePolling(
+        matchId: String,
+        matchSeq: Int? = nil,
+        isLive: Bool,
+        feedProvider: @escaping () -> FirebaseOTTFeed?
+    ) {
+        startLiveListening(matchId: matchId, matchSeq: matchSeq, isLive: isLive, feedProvider: feedProvider)
+    }
+
+    func stopLivePolling() {
+        stopLiveListening()
+    }
+
+    private func applyLiveMatch(_ api: APICompleteMatch, matchId: String) {
+        if let tid = api.matchInfo.tournament?.id, !tid.isEmpty {
+            activeTournamentId = tid
+        }
+        lastAPI = api
+
+        let scoreSignature = [
+            api.matchInfo.status,
+            "\(api.ballByBall.count)",
+            api.ballByBall.last?.id ?? "",
+        ].joined(separator: "|")
+
+        liveApplyTask?.cancel()
+        liveApplyTask = Task {
+            let feed = feedProvider?()
+            let ballVideos = await resolveBallVideos(matchId: matchId, api: api, feed: feed)
+            let fullSignature = [scoreSignature, ballVideoSignature(ballVideos)].joined(separator: "|")
+            guard fullSignature != lastLiveSignature else { return }
+            lastLiveSignature = fullSignature
+            lastBallVideoSignature = ballVideoSignature(ballVideos)
+
+            let mapped = await mapMatchDetail(api: api, ballVideos: ballVideos)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.detail = mapped
+                self.errorMessage = nil
             }
         }
     }
 
-    func stopLivePolling() {
-        livePollTask?.cancel()
-        livePollTask = nil
+    /// Admin clip save hone par turant OTT update — score change ke bina bhi.
+    private func startBallVideoPolling(matchId: String) {
+        ballVideoPollTask?.cancel()
+        ballVideoPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await self?.pollBallVideos(matchId: matchId)
+            }
+        }
+    }
+
+    private func pollBallVideos(matchId: String) async {
+        guard let api = lastAPI, Self.isLiveStatus(api.matchInfo.status) else { return }
+        guard let tournamentId = activeTournamentId, !tournamentId.isEmpty else { return }
+        guard let fresh = await FirebaseOTTClient.fetchBallVideos(tournamentId: tournamentId, matchId: matchId) else {
+            return
+        }
+        let signature = ballVideoSignature(fresh)
+        guard signature != lastBallVideoSignature else { return }
+        lastBallVideoSignature = signature
+
+        let mapped = await mapMatchDetail(api: api, ballVideos: fresh)
+        guard !Task.isCancelled else { return }
+        detail = mapped
+    }
+
+    private func resolveBallVideos(
+        matchId: String,
+        api: APICompleteMatch,
+        feed: FirebaseOTTFeed?
+    ) async -> [String: FirebaseBall]? {
+        let tournamentId = api.matchInfo.tournament?.id
+            ?? activeTournamentId
+            ?? feed.flatMap { FirebaseOTTClient.findMatch(matchId: matchId, in: $0)?.0.tournamentId }
+
+        if let tournamentId, !tournamentId.isEmpty,
+           let fresh = await FirebaseOTTClient.fetchBallVideos(tournamentId: tournamentId, matchId: matchId),
+           !fresh.isEmpty {
+            return fresh
+        }
+
+        return feed.flatMap { FirebaseOTTClient.findMatch(matchId: matchId, in: $0)?.1.balls }
+    }
+
+    private func ballVideoSignature(_ balls: [String: FirebaseBall]?) -> String {
+        guard let balls, !balls.isEmpty else { return "0" }
+        let withVideo = balls.values.filter { !($0.videoUrl ?? "").isEmpty }
+        let ids = withVideo.compactMap(\.id).sorted().joined(separator: ",")
+        return "\(withVideo.count)|\(ids)"
+    }
+
+    private func apiTournamentId(from pair: (FirebaseTournament, FirebaseMatch)?) -> String? {
+        pair?.0.tournamentId
+    }
+
+    private func mapMatchDetail(api: APICompleteMatch, ballVideos: [String: FirebaseBall]?) async -> MatchDetail {
+        await Task.detached(priority: .userInitiated) {
+            MatchDetailMapper.map(api.mergingBallVideos(ballVideos))
+        }.value
     }
 
     private static func isLiveStatus(_ status: String) -> Bool {

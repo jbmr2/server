@@ -116,6 +116,10 @@ struct HomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 restartHeroAutoplay()
+                Task {
+                    await store.refresh(force: true, silent: true)
+                    store.ensureLiveUpdatesRunning()
+                }
             }
         }
     }
@@ -226,7 +230,7 @@ struct HomeView: View {
                 }
                 .frame(height: heroSlideHeight)
                 .overlay {
-                    if store.isLoading {
+                    if store.isLoading && featured.isEmpty {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(Color.black.opacity(0.25))
                             .frame(maxWidth: 358)
@@ -915,12 +919,12 @@ private struct FigmaHeroHighlightThumbnail: View {
 
     var body: some View {
         ZStack {
-            if match.videoURL != nil {
-                HeroHighlightPreviewVideo(url: match.videoURL, isActive: isActive) {
+            if match.isMatchHighlightSlide, let url = match.videoURL {
+                HeroHighlightPreviewVideo(url: url, isActive: isActive) {
                     LinearGradient(colors: [homeColor, awayColor], startPoint: .leading, endPoint: .trailing)
                 }
             } else {
-                HeroVideoFrameBackground(url: match.videoURL) {
+                HeroVideoFrameBackground(url: match.imageURL) {
                     LinearGradient(colors: [homeColor, awayColor], startPoint: .leading, endPoint: .trailing)
                 }
             }

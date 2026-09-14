@@ -7,6 +7,7 @@ enum MatchDeepLink {
     enum Route: Equatable {
         case match(String)
         case tournament(String)
+        case tab(String)
     }
 
     static func appOpenURL(matchId: String) -> URL {
@@ -45,6 +46,9 @@ enum MatchDeepLink {
         case "tournament":
             let id = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
             return id.isEmpty ? nil : .tournament(id)
+        case "tab":
+            let name = parts[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return name.isEmpty ? nil : .tab(name)
         default:
             return nil
         }
@@ -62,6 +66,7 @@ enum MatchDeepLink {
         switch head {
         case "match": return .match(id)
         case "tournament": return .tournament(id)
+        case "tab": return .tab(id.lowercased())
         default: return nil
         }
     }

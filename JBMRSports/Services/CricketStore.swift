@@ -1,6 +1,10 @@
 import Foundation
 import Combine
 
+#if canImport(FirebaseCore)
+import FirebaseCore
+#endif
+
 @MainActor
 final class CricketStore: ObservableObject {
     static let shared = CricketStore()
@@ -16,10 +20,14 @@ final class CricketStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var dataSource: String = ""
+    @Published private(set) var adsEnabled = true
 
     private(set) var cachedFeed: FirebaseOTTFeed?
     private var lastRefreshAt: Date?
-    private var liveFeedPollTask: Task<Void, Never>?
+    private var metaListener = OTTMetaLiveListener()
+    private var liveScorePoller = CrickAPILiveScorePoller()
+    private var lastSilentRefreshAt: Date?
+    private var liveScoreSignatures: [String: String] = [:]
 
     private init() {
         loadCachedIfNeeded()
@@ -30,7 +38,7 @@ final class CricketStore: ObservableObject {
     }
 
     var primaryLiveMatch: FeaturedMatch? {
-        liveMatches.first ?? featuredMatches.first
+        liveMatches.first(where: { $0.videoURL != nil }) ?? liveMatches.first ?? featuredMatches.first
     }
 
     func featuredMatch(id: String) -> FeaturedMatch? {
@@ -45,6 +53,18 @@ final class CricketStore: ObservableObject {
             return featured(from: schedule)
         }
         return nil
+    }
+
+    func playbackURL(forMatchId matchId: String) -> URL? {
+        if let url = featuredMatch(id: matchId)?.videoURL { return url }
+        guard let feed = cachedFeed,
+              let (_, firebaseMatch) = FirebaseOTTClient.findMatch(matchId: matchId, in: feed) else {
+            return nil
+        }
+        let live = firebaseMatch.liveUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !live.isEmpty, let url = CrickAPI.absoluteURL(from: live) { return url }
+        let highlight = firebaseMatch.highlightUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return CrickAPI.absoluteURL(from: highlight)
     }
 
     func featured(from schedule: ScheduleMatch) -> FeaturedMatch {
@@ -135,7 +155,7 @@ final class CricketStore: ObservableObject {
         ingest(feed: feed, source: "Cache", updatedAt: FeedCache.modifiedAt())
     }
 
-    func refresh(force: Bool = false) async {
+    func refresh(force: Bool = false, silent: Bool = false) async {
         if !force,
            let lastRefreshAt,
            Date().timeIntervalSince(lastRefreshAt) < 25,
@@ -144,17 +164,23 @@ final class CricketStore: ObservableObject {
         }
 
         let hadData = !featuredMatches.isEmpty || !scheduleMatches.isEmpty
-        isLoading = true
-        if !hadData {
-            errorMessage = nil
+        if !silent {
+            isLoading = true
+            if !hadData {
+                errorMessage = nil
+            }
         }
-        defer { isLoading = false }
+        defer {
+            if !silent {
+                isLoading = false
+            }
+        }
 
         do {
             let (feed, data) = try await FirebaseOTTClient.fetchFeedWithData()
             FeedCache.save(data)
             cachedFeed = feed
-            ingest(feed: feed, source: "Firebase", updatedAt: Date())
+            ingest(feed: feed, source: silent ? "Firebase Live" : "Firebase", updatedAt: Date())
             lastRefreshAt = Date()
         } catch is CancellationError {
             return
@@ -166,6 +192,7 @@ final class CricketStore: ObservableObject {
     }
 
     private func ingest(feed: FirebaseOTTFeed, source: String, updatedAt: Date? = nil) {
+        applyAdsSetting(from: feed)
         let apiTournaments = FirebaseOTTClient.toAPITournaments(feed)
         if apiTournaments.isEmpty {
             tournaments = []
@@ -196,7 +223,11 @@ final class CricketStore: ObservableObject {
         Self.mergeHighlightURLs(feed: feed, tournaments: &enriched)
         tournaments = enriched
         let slides = apply(enriched)
-        featuredMatches = slides
+        if source == "Firebase Live", !featuredMatches.isEmpty {
+            featuredMatches = mergeFeaturedPreservingOrder(old: featuredMatches, new: slides)
+        } else {
+            featuredMatches = slides
+        }
         dataSource = source
         lastUpdated = updatedAt ?? Date()
         errorMessage = nil
@@ -211,19 +242,120 @@ final class CricketStore: ObservableObject {
             .map { Self.enrichHighlight($0, tournaments: tournaments) }
         shortClips = FirebaseOTTClient.toShortClips(feed)
         updateLiveFeedPolling()
+        updateLiveScorePolling()
+    }
+
+    private func updateLiveScorePolling() {
+        var seen = Set<String>()
+        var targets: [CrickAPILiveScorePoller.Target] = []
+        for match in scheduleMatches where match.status == .live {
+            guard seen.insert(match.id).inserted else { continue }
+            targets.append(CrickAPILiveScorePoller.Target(id: match.id, matchSeq: match.matchSeq))
+        }
+        for match in featuredMatches where match.isLive {
+            guard seen.insert(match.id).inserted else { continue }
+            targets.append(CrickAPILiveScorePoller.Target(id: match.id, matchSeq: match.matchSeq))
+        }
+        guard !targets.isEmpty else {
+            liveScorePoller.stop()
+            liveScoreSignatures = [:]
+            return
+        }
+        liveScorePoller.start(matches: targets) { [weak self] matchId, api in
+            self?.patchLiveScores(matchId: matchId, from: api)
+        }
+    }
+
+    /// Call after Firebase bootstrap + first feed load so meta listener + live scores start.
+    func ensureLiveUpdatesRunning() {
+        updateLiveFeedPolling()
+        updateLiveScorePolling()
+    }
+
+    private func patchLiveScores(matchId: String, from api: APICompleteMatch) {
+        let mapped = MatchDetailMapper.map(api)
+        let signature = "\(mapped.scoreLabel)|\(mapped.status)|\(api.ballByBall.count)"
+        if liveScoreSignatures[matchId] == signature { return }
+        liveScoreSignatures[matchId] = signature
+
+        let statusLine = api.matchInfo.result?.summaryText ?? mapped.scoreLabel
+        let teamScores = inningsScoresFromDetail(mapped)
+
+        if let idx = featuredMatches.firstIndex(where: { $0.id == matchId }) {
+            var match = featuredMatches[idx]
+            if !mapped.scoreLabel.isEmpty { match.scoreLabel = mapped.scoreLabel }
+            if !statusLine.isEmpty { match.statusLine = statusLine }
+            if let home = teamScores.home { match.homeInningsScore = home }
+            if let away = teamScores.away { match.awayInningsScore = away }
+            featuredMatches[idx] = match
+        }
+
+        if let idx = scheduleMatches.firstIndex(where: { $0.id == matchId }) {
+            var row = scheduleMatches[idx]
+            if !mapped.scoreLabel.isEmpty { row.scoreLabel = mapped.scoreLabel }
+            scheduleMatches[idx] = row
+        }
+    }
+
+    private func inningsScoresFromDetail(_ detail: MatchDetail) -> (home: String?, away: String?) {
+        var home: String?
+        var away: String?
+        let homeShort = detail.homeShort.lowercased()
+        let awayShort = detail.awayShort.lowercased()
+        let homeName = detail.homeName.lowercased()
+        let awayName = detail.awayName.lowercased()
+
+        for inn in detail.innings {
+            let short = inn.teamShort.lowercased()
+            let name = inn.teamName.lowercased()
+            if short == homeShort || name == homeName {
+                home = inn.summaryLabel
+            } else if short == awayShort || name == awayName {
+                away = inn.summaryLabel
+            }
+        }
+        if home == nil, let first = detail.innings.first { home = first.summaryLabel }
+        if away == nil, detail.innings.count > 1 { away = detail.innings[1].summaryLabel }
+        return (home, away)
     }
 
     private func updateLiveFeedPolling() {
-        liveFeedPollTask?.cancel()
-        guard !liveMatches.isEmpty else { return }
-        liveFeedPollTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 20_000_000_000)
-                guard !Task.isCancelled else { return }
-                guard !liveMatches.isEmpty else { return }
-                await refresh(force: true)
+        #if canImport(FirebaseCore)
+        guard FirebaseApp.app() != nil else { return }
+        #endif
+        guard !liveMatches.isEmpty else {
+            metaListener.stop()
+            return
+        }
+        guard !metaListener.isRunning else { return }
+        metaListener.start { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if let last = self.lastSilentRefreshAt,
+                   Date().timeIntervalSince(last) < 4 {
+                    return
+                }
+                self.lastSilentRefreshAt = Date()
+                await self.refresh(force: true, silent: true)
             }
         }
+    }
+
+    /// Silent refresh par hero carousel order / page reset na ho.
+    private func mergeFeaturedPreservingOrder(old: [FeaturedMatch], new: [FeaturedMatch]) -> [FeaturedMatch] {
+        guard !old.isEmpty else { return new }
+        let newById = Dictionary(uniqueKeysWithValues: new.map { ($0.id, $0) })
+        let merged = old.compactMap { newById[$0.id] }
+        if merged.isEmpty { return new }
+        let oldIds = Set(old.map(\.id))
+        let appended = new.filter { !oldIds.contains($0.id) }
+        return merged + appended
+    }
+
+    private func applyAdsSetting(from feed: FirebaseOTTFeed) {
+        let enabled = feed.settings?.adsEnabled != false
+        adsEnabled = enabled
+        AdMobService.shared.isAdsAllowed = enabled
     }
 
     private static func enrichHighlight(_ clip: HighlightClip, tournaments: [APITournament]) -> HighlightClip {
@@ -537,7 +669,7 @@ enum MatchMapper {
         let scheduled = parseDate(match.scheduledAt)
         let year = yearString(from: tournament.startDate) ?? "2026"
         let status = match.status.lowercased()
-        let isLive = status == "live"
+        let isLive = status == "live" || status == "in progress" || status == "inprogress"
         let isCompleted = status == "completed" || status == "finished"
 
         let score = scoreLine(from: match.innings)

@@ -19,20 +19,23 @@ struct MatchCenterView: View {
     @State private var selectedOver = 1
     @State private var selectedInning = 1
     @State private var showShare = false
-    @State private var showFullscreen = false
+    @State private var isPlayerFullscreen = false
     @State private var currentPlayURL: URL?
+    @State private var showVideoStartAd = false
+    @State private var bannerAdFallback = false
+    @State private var onPlayerAdSkipped: (() -> Void)?
+    @State private var playerControlsVisible = true
+    @State private var didLoadPlayer = false
+    @State private var isPlayingBallClip = false
 
     init(match: FeaturedMatch, tab: Binding<AppTab>, showSearch: Binding<Bool>, embedsInTab: Bool = false) {
         self.match = match
         self._tab = tab
         self._showSearch = showSearch
         self.embedsInTab = embedsInTab
-        _playback = StateObject(wrappedValue: StreamPlayback(
-            url: match.videoURL,
-            autoplay: AppSettings.autoPlay,
-            looping: true
-        ))
+        _playback = StateObject(wrappedValue: StreamPlayback(url: nil, autoplay: false, looping: false))
         _currentPlayURL = State(initialValue: match.videoURL)
+        _showVideoStartAd = State(initialValue: false)
     }
 
     enum CenterSection: String, CaseIterable, Identifiable {
@@ -46,6 +49,14 @@ struct MatchCenterView: View {
     }
 
     private var detail: MatchDetail? { detailStore.detail }
+
+    private var resolvedMatch: FeaturedMatch {
+        store.featuredMatch(id: match.id) ?? match
+    }
+
+    private var playbackURL: URL? {
+        currentPlayURL ?? store.playbackURL(forMatchId: match.id) ?? resolvedMatch.videoURL
+    }
 
     private var activeInning: MatchInningsDetail? {
         guard let detail else { return nil }
@@ -93,53 +104,123 @@ struct MatchCenterView: View {
         }
         .background(Theme.background.ignoresSafeArea())
         .safeAreaInset(edge: .top, spacing: 0) {
-            matchHeader
-                .background(Theme.background)
+            if !isPlayerFullscreen {
+                matchHeader
+                    .background(Theme.background)
+            }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .navigationBarBackButtonHidden(!embedsInTab)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(isPlayerFullscreen ? .hidden : .automatic, for: .tabBar)
         .task(id: match.id) {
             userLibrary.recordWatch(matchId: match.id, title: match.vsLabel)
-            await detailStore.load(matchId: match.id, matchSeq: match.matchSeq, feed: store.cachedFeed)
+
+            let shouldListenLive = !isMatchCompleted
+                && (resolvedMatch.isLive
+                    || store.scheduleMatches.first(where: { $0.id == match.id })?.status == .live
+                    || match.badge == "LIVE MATCH")
+            if shouldListenLive {
+                detailStore.startLiveListening(
+                    matchId: match.id,
+                    matchSeq: match.matchSeq,
+                    isLive: true
+                ) { store.cachedFeed }
+            }
+
+            await store.refresh(force: true, silent: true)
+            store.ensureLiveUpdatesRunning()
+            reloadLivePlaybackURL()
+            beginVideoPlaybackWithAdsIfNeeded()
+            await detailStore.load(
+                matchId: match.id,
+                matchSeq: match.matchSeq,
+                feed: store.cachedFeed
+            )
             if let last = detailStore.detail?.innings.last?.number {
                 selectedInning = last
             }
             if let lastOver = detailStore.detail?.overs.last?.number {
                 selectedOver = lastOver
             }
-            let live = match.isLive || MatchDetailStore.isLiveMatchStatus(detailStore.detail?.status ?? "")
-            detailStore.startLivePolling(matchId: match.id, isLive: live) { store.cachedFeed }
+
+            let isLiveNow = MatchDetailStore.isLiveMatchStatus(detailStore.detail?.status ?? "")
+                || resolvedMatch.isLive
+                || store.scheduleMatches.first(where: { $0.id == match.id })?.status == .live
+            if isLiveNow, !shouldListenLive {
+                detailStore.startLiveListening(
+                    matchId: match.id,
+                    matchSeq: match.matchSeq,
+                    isLive: true
+                ) { store.cachedFeed }
+            }
+        }
+        .onAppear {
+            reloadLivePlaybackURL()
+            enforceStreamingPolicy()
+            beginVideoPlaybackWithAdsIfNeeded()
+        }
+        .onChange(of: store.featuredMatches) { _, _ in
+            reloadLivePlaybackURL()
+            if isCurrentlyLive, playback.hasMedia, !playback.isPlaying {
+                beginVideoPlaybackWithAdsIfNeeded()
+            }
+        }
+        .onChange(of: playback.isReady) { _, ready in
+            if ready, isCurrentlyLive, !playback.isPlaying, !streamingBlocked {
+                playback.play()
+            }
+        }
+        .onChange(of: store.lastUpdated) { _, _ in
+            Task {
+                await detailStore.load(
+                    matchId: match.id,
+                    matchSeq: match.matchSeq,
+                    feed: store.cachedFeed
+                )
+                store.ensureLiveUpdatesRunning()
+            }
+        }
+        .onChange(of: detailStore.detail?.scoreLabel) { _, _ in
+            if let lastOver = detailStore.detail?.overs.last?.number {
+                selectedOver = lastOver
+            }
         }
         .onDisappear {
-            detailStore.stopLivePolling()
+            detailStore.stopLiveListening()
         }
-        .onAppear { enforceStreamingPolicy() }
         .onChange(of: networkMonitor.isOnWifi) { _, _ in enforceStreamingPolicy() }
         .onChange(of: wifiOnlyStreaming) { _, _ in enforceStreamingPolicy() }
         .sheet(isPresented: $showShare) {
             ShareSheet(items: shareItems)
         }
-        .fullScreenCover(item: Binding<IdentifiedURL?>(
-            get: {
-                guard showFullscreen else { return nil }
-                return (currentPlayURL ?? match.videoURL).map { IdentifiedURL(url: $0) }
-            },
-            set: { (value: IdentifiedURL?) in
-                showFullscreen = value != nil
+        .fullScreenCover(isPresented: $isPlayerFullscreen) {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                playerSurface(fullscreen: true)
+                    .ignoresSafeArea()
             }
-        )) { item in
-            FullscreenPlayerView(url: item.url, title: match.vsLabel)
+            .statusBarHidden(true)
+            .persistentSystemOverlays(.hidden)
+        }
+        .onChange(of: isPlayerFullscreen) { _, expanded in
+            if expanded {
+                OrientationManager.enableLandscape()
+            } else {
+                OrientationManager.restorePortrait()
+            }
         }
         .overlay(alignment: .top) {
-            if let toast = downloadLibrary.toastMessage {
-                toastBanner(toast) { downloadLibrary.clearToast() }
-                    .padding(.top, 56)
-            } else if let toast = reelStore.toastMessage {
-                toastBanner(toast) { reelStore.clearToast() }
-                    .padding(.top, 56)
-            } else if let toast = userLibrary.toastMessage {
-                toastBanner(toast) { userLibrary.clearToast() }
-                    .padding(.top, 56)
+            if !isPlayerFullscreen {
+                if let toast = downloadLibrary.toastMessage {
+                    toastBanner(toast) { downloadLibrary.clearToast() }
+                        .padding(.top, 56)
+                } else if let toast = reelStore.toastMessage {
+                    toastBanner(toast) { reelStore.clearToast() }
+                        .padding(.top, 56)
+                } else if let toast = userLibrary.toastMessage {
+                    toastBanner(toast) { userLibrary.clearToast() }
+                        .padding(.top, 56)
+                }
             }
         }
     }
@@ -207,7 +288,8 @@ struct MatchCenterView: View {
     // MARK: - Player
 
     private var isCurrentlyLive: Bool {
-        if match.isLive { return true }
+        let m = resolvedMatch
+        if m.isLive { return true }
         return (detail?.status ?? "").lowercased() == "live"
     }
 
@@ -237,28 +319,103 @@ struct MatchCenterView: View {
 
     private var player: some View {
         VStack(spacing: 0) {
-            ZStack {
-                StreamVideoLayer(player: playback.player, videoGravity: .resizeAspectFill)
-                    .frame(height: playerHeight)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-                    .allowsHitTesting(false)
+            playerSurface(fullscreen: false)
+                .frame(height: playerHeight)
 
-                if !playback.isPlaying && playback.progress < 0.02 {
-                    MatchArtwork(match: match)
-                        .frame(height: playerHeight)
-                        .frame(maxWidth: .infinity)
+            matchInfoBar
+
+            if streamingBlocked {
+                Text("Wi-Fi only streaming is on — connect to Wi-Fi to watch live")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Theme.card)
+            } else if playbackURL == nil, isCurrentlyLive {
+                Text("Live stream link missing — Admin app se Refresh HLS dabao")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Theme.card)
+            } else if let error = playback.playbackError {
+                Text("Stream error: \(error)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.liveRed)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Theme.card)
+            }
+        }
+        .onDisappear {
+            if isPlayerFullscreen {
+                isPlayerFullscreen = false
+                OrientationManager.restorePortrait()
+            }
+            playback.pause()
+        }
+    }
+
+    private var cloudflareLiveEmbed: (videoId: String, subdomain: String)? {
+        guard !isPlayingBallClip else { return nil }
+        guard isCurrentlyLive, let url = playbackURL else { return nil }
+        // Ball clips (.mp4) must use native AVPlayer, not the live iframe embed.
+        let path = url.path.lowercased()
+        if path.contains("clip.mp4") || path.hasSuffix(".mp4") { return nil }
+        guard CloudflareStreamURL.isCloudflareStream(url) else { return nil }
+        if let videoId = CloudflareStreamURL.videoId(from: url) {
+            let subdomain = CloudflareStreamURL.customerSubdomain(from: url) ?? "febottgr27fxjy24"
+            return (videoId, subdomain)
+        }
+        return nil
+    }
+
+    private func playerSurface(fullscreen: Bool) -> some View {
+        ZStack {
+            if let embed = cloudflareLiveEmbed {
+                CloudflareStreamEmbedView(
+                    videoId: embed.videoId,
+                    customerSubdomain: embed.subdomain
+                )
+                .frame(maxWidth: .infinity, maxHeight: fullscreen ? .infinity : nil)
+                .clipped()
+            } else {
+                StreamVideoLayer(
+                    player: playback.player,
+                    videoGravity: fullscreen ? .resizeAspect : .resizeAspectFill
+                )
+                .frame(maxWidth: .infinity, maxHeight: fullscreen ? .infinity : nil)
+                .clipped()
+                .allowsHitTesting(false)
+
+                if !fullscreen, playback.hasMedia, !playback.isReady, !playback.isPlaying, playback.playbackError == nil {
+                    ProgressView()
+                        .tint(Theme.accent)
+                        .scaleEffect(1.2)
+                }
+
+                if !fullscreen, shouldShowArtworkOverlay {
+                    MatchArtwork(match: resolvedMatch)
+                        .frame(maxWidth: .infinity, maxHeight: fullscreen ? .infinity : nil)
                         .clipped()
                         .allowsHitTesting(false)
                 }
+            }
 
+            if cloudflareLiveEmbed == nil, playerControlsVisible {
                 LinearGradient(
                     colors: [.black.opacity(0.35), .clear, .black.opacity(0.75)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
                 .allowsHitTesting(false)
+                .transition(.opacity)
+            }
 
+            if cloudflareLiveEmbed == nil, playerControlsVisible {
                 VStack(spacing: 0) {
                     HStack {
                         if isCurrentlyLive {
@@ -289,15 +446,16 @@ struct MatchCenterView: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .padding(.top, 10)
+                    .padding(.top, fullscreen ? 20 : 10)
 
                     Spacer(minLength: 0)
+                        .allowsHitTesting(false)
 
                     HStack(spacing: 10) {
-                        Button { playback.toggle() } label: {
-                            Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                        }
-                        .buttonStyle(.plain)
+                        Text(playback.currentLabel)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .frame(width: 40, alignment: .leading)
 
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
@@ -316,42 +474,91 @@ struct MatchCenterView: View {
                             )
                         }
                         .frame(height: 18)
-                        Text("1080p")
+
+                        Text(playback.durationLabel)
                             .font(.system(size: 11, weight: .semibold))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.15)))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .frame(width: 40, alignment: .trailing)
+
+                        if !fullscreen {
+                            Text("1080p")
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.15)))
+                        }
                         Button {
-                            if currentPlayURL != nil || match.videoURL != nil {
-                                showFullscreen = true
-                            }
+                            guard !showVideoStartAd, currentPlayURL != nil || match.videoURL != nil else { return }
+                            setPlayerFullscreen(!isPlayerFullscreen)
                         } label: {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            Image(systemName: isPlayerFullscreen
+                                ? "arrow.down.right.and.arrow.up.left"
+                                : "arrow.up.left.and.arrow.down.right")
                         }
                         .buttonStyle(.plain)
                     }
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, fullscreen ? 20 : 10)
                     .background(Color.black.opacity(0.001))
                 }
+                .transition(.opacity)
             }
-            .frame(height: playerHeight)
 
-            matchInfoBar
+            if cloudflareLiveEmbed == nil, !showVideoStartAd, playerControlsVisible || !playback.isPlaying {
+                Button {
+                    playback.toggle()
+                    if !playback.isPlaying {
+                        playerControlsVisible = true
+                    }
+                } label: {
+                    Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: fullscreen ? 34 : 28, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: fullscreen ? 72 : 60, height: fullscreen ? 72 : 60)
+                        .background(Circle().fill(.black.opacity(0.55)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity)
+            }
 
-            if streamingBlocked {
-                Text("Wi-Fi only streaming is on — connect to Wi-Fi to watch live")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Theme.card)
+            if showVideoStartAd, store.adsEnabled {
+                Group {
+                    if bannerAdFallback {
+                        PlayerBannerAdFallback(adUnitID: AdMobConfig.playerAd) {
+                            finishPlayerAdAndContinue()
+                        }
+                    } else {
+                        PlayerVideoAdOverlay(player: playback.player) {
+                            finishPlayerAdAndContinue()
+                        } onFailed: {
+                            bannerAdFallback = true
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .onDisappear { playback.pause() }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard cloudflareLiveEmbed == nil else { return }
+            guard !showVideoStartAd else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                playerControlsVisible.toggle()
+            }
+        }
+    }
+
+    private func setPlayerFullscreen(_ expanded: Bool) {
+        guard isPlayerFullscreen != expanded else { return }
+        if expanded {
+            playerControlsVisible = true
+        }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            isPlayerFullscreen = expanded
+        }
     }
 
     private var matchInfoBar: some View {
@@ -726,9 +933,8 @@ struct MatchCenterView: View {
                                 isDownloading: downloadLibrary.downloadingBallIds.contains(delivery.id),
                                 isInReel: reelStore.contains(id: delivery.id),
                                 onPlay: {
-                                    if let url = downloadLibrary.playbackURL(for: delivery) {
-                                        currentPlayURL = url
-                                        playback.replace(url: url, autoplay: true)
+                                    if downloadLibrary.playbackURL(for: delivery) != nil {
+                                        playBallClipWithAds(delivery)
                                         section = .ballByBall
                                     } else {
                                         downloadLibrary.toastMessage = "Is ball pe video nahi hai"
@@ -995,7 +1201,91 @@ struct MatchCenterView: View {
     private func enforceStreamingPolicy() {
         if streamingBlocked {
             playback.pause()
+            showVideoStartAd = false
+            isPlayerFullscreen = false
+            OrientationManager.restorePortrait()
         }
+    }
+
+    private func finishPlayerAdAndContinue() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            showVideoStartAd = false
+        }
+        let action = onPlayerAdSkipped
+        onPlayerAdSkipped = nil
+        action?()
+    }
+
+    private var shouldShowArtworkOverlay: Bool {
+        guard playback.hasMedia else { return true }
+        if isCurrentlyLive {
+            return !playback.isReady && !playback.isPlaying
+        }
+        return !playback.isPlaying && playback.progress < 0.02
+    }
+
+    private func reloadLivePlaybackURL() {
+        let latest = store.playbackURL(forMatchId: match.id) ?? resolvedMatch.videoURL
+        guard let latest else { return }
+        if currentPlayURL == latest, didLoadPlayer { return }
+        currentPlayURL = latest
+        didLoadPlayer = true
+        playback.replace(
+            url: latest,
+            autoplay: isCurrentlyLive || AppSettings.autoPlay,
+            isLive: isCurrentlyLive
+        )
+    }
+
+    private func loadPlayerIfNeeded() {
+        reloadLivePlaybackURL()
+    }
+
+    private func beginVideoPlaybackWithAdsIfNeeded() {
+        loadPlayerIfNeeded()
+        guard playbackURL != nil, !streamingBlocked else {
+            showVideoStartAd = false
+            return
+        }
+
+        // Match page open par IMA ad mat chalao — device/simulator crash + freeze avoid.
+        showVideoStartAd = false
+        bannerAdFallback = false
+        onPlayerAdSkipped = nil
+        if isCurrentlyLive || AppSettings.autoPlay {
+            playback.play()
+        }
+    }
+
+    private func playBallClipWithAds(_ delivery: BallDelivery) {
+        guard let url = downloadLibrary.playbackURL(for: delivery) else {
+            downloadLibrary.toastMessage = "Is ball pe video nahi hai"
+            return
+        }
+
+        isPlayingBallClip = true
+        onPlayerAdSkipped = {
+            currentPlayURL = url
+            playback.onFinished = {
+                returnToLiveStream()
+            }
+            playback.replace(url: url, autoplay: true, isLive: false)
+        }
+
+        guard store.adsEnabled else {
+            finishPlayerAdAndContinue()
+            return
+        }
+
+        bannerAdFallback = false
+        showVideoStartAd = true
+    }
+
+    private func returnToLiveStream() {
+        isPlayingBallClip = false
+        playback.onFinished = nil
+        currentPlayURL = nil
+        reloadLivePlaybackURL()
     }
 }
 
@@ -1218,10 +1508,6 @@ struct BallDeliveryCard: View {
     }
 }
 
-private struct IdentifiedURL: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
-}
 
 struct CommentaryCard: View {
     let item: CommentaryItem

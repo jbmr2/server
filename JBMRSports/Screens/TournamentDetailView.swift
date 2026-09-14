@@ -5,6 +5,9 @@ struct TournamentDetailView: View {
     @Binding var tab: AppTab
     @Binding var showSearch: Bool
     @EnvironmentObject private var store: CricketStore
+    @EnvironmentObject private var reelStore: ReelStudioStore
+    @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
+    @EnvironmentObject private var userLibrary: UserLibraryStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var section: DetailSection = .matches
@@ -73,6 +76,10 @@ struct TournamentDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $selectedMatch) { match in
             MatchCenterView(match: match, tab: $tab, showSearch: $showSearch)
+                .environmentObject(store)
+                .environmentObject(reelStore)
+                .environmentObject(downloadLibrary)
+                .environmentObject(userLibrary)
         }
     }
 

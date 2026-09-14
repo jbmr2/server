@@ -1,3 +1,4 @@
+import AVFoundation
 import AVKit
 import Combine
 import SwiftUI
@@ -14,6 +15,7 @@ final class StreamPlayback: ObservableObject {
     @Published var isReady = false
     @Published var durationLabel = "0:00"
     @Published var currentLabel = "0:00"
+    @Published var playbackError: String?
     private(set) var hasMedia: Bool
 
     var onFinished: (() -> Void)?
@@ -22,21 +24,33 @@ final class StreamPlayback: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var statusObserver: NSKeyValueObservation?
     private let looping: Bool
+    private let isLiveStream: Bool
 
-    init(url: URL?, autoplay: Bool = false, looping: Bool = false, muted: Bool = false) {
+    init(url: URL?, autoplay: Bool = false, looping: Bool = false, muted: Bool = false, isLive: Bool = false) {
         self.looping = looping
+        self.isLiveStream = isLive
         self.hasMedia = url != nil
         if let url {
-            let item = AVPlayerItem(url: url)
+            Self.activateAudioSession()
+            let item = Self.makePlayerItem(url: url, isLive: isLive)
             player = AVPlayer(playerItem: item)
             player.isMuted = muted
-            player.automaticallyWaitsToMinimizeStalling = true
+            player.automaticallyWaitsToMinimizeStalling = !isLive
             player.actionAtItemEnd = looping ? .none : .pause
 
             statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    self.isReady = item.status == .readyToPlay
+                    switch item.status {
+                    case .readyToPlay:
+                        self.isReady = true
+                        self.playbackError = nil
+                    case .failed:
+                        self.isReady = false
+                        self.playbackError = item.error?.localizedDescription ?? "Playback failed"
+                    default:
+                        break
+                    }
                     let d = item.duration.seconds
                     if d.isFinite, d > 0 {
                         self.durationLabel = Self.format(d)
@@ -85,17 +99,30 @@ final class StreamPlayback: ObservableObject {
         }
     }
 
-    func replace(url: URL?, autoplay: Bool = true) {
+    func replace(url: URL?, autoplay: Bool = true, isLive: Bool? = nil) {
         player.pause()
         guard let url else { return }
         hasMedia = true
-        let item = AVPlayerItem(url: url)
+        playbackError = nil
+        Self.activateAudioSession()
+        let live = isLive ?? isLiveStream
+        let item = Self.makePlayerItem(url: url, isLive: live)
+        player.automaticallyWaitsToMinimizeStalling = !live
         player.replaceCurrentItem(with: item)
         statusObserver?.invalidate()
         statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.isReady = item.status == .readyToPlay
+                switch item.status {
+                case .readyToPlay:
+                    self.isReady = true
+                    self.playbackError = nil
+                case .failed:
+                    self.isReady = false
+                    self.playbackError = item.error?.localizedDescription ?? "Playback failed"
+                default:
+                    break
+                }
                 let d = item.duration.seconds
                 if d.isFinite, d > 0 {
                     self.durationLabel = Self.format(d)
@@ -166,6 +193,25 @@ final class StreamPlayback: ObservableObject {
         guard seconds.isFinite else { return "0:00" }
         let s = max(0, Int(seconds.rounded()))
         return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    private static func activateAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+        try? session.setActive(true)
+    }
+
+    private static func makePlayerItem(url: URL, isLive: Bool) -> AVPlayerItem {
+        let asset = AVURLAsset(url: url)
+        let item = AVPlayerItem(asset: asset)
+        if isLive {
+            item.preferredForwardBufferDuration = 1
+            if #available(iOS 15.0, *) {
+                item.automaticallyPreservesTimeOffsetFromLive = true
+                item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            }
+        }
+        return item
     }
 }
 

@@ -94,21 +94,28 @@ struct LoginView: View {
                     Button("Change number") {
                         otpSent = false
                         otp = ""
-                        authStore.clearError()
+                        authStore.resetOTPFlow()
                     }
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(authStore.isLoading)
+
+                    Button("Resend OTP") {
+                        Task {
+                            await authStore.sendOTP(phone: mobile)
+                        }
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                     .disabled(authStore.isLoading)
                 }
 
                 Button {
                     Task {
                         if !otpSent {
-                            await authStore.sendOTP(phone: mobile)
-                            if authStore.errorMessage == nil {
-                                otpSent = true
-                            }
+                            otpSent = await authStore.sendOTP(phone: mobile)
                         } else {
                             let ok = await authStore.verifyOTP(otp)
                             if ok { otp = "" }
@@ -138,6 +145,24 @@ struct LoginView: View {
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)
+
+            #if DEBUG
+            if authStore.isRunningOnSimulator {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Simulator: real SMS nahi aata. Firebase Console → Authentication → Phone → test number add karo (fixed OTP), ya neeche Dev Login use karo.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(muted)
+
+                    Button("Continue on Simulator (Dev)") {
+                        authStore.signInSimulatorDev()
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+            }
+            #endif
 
             Spacer(minLength: 0)
 

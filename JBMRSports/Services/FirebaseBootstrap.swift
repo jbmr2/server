@@ -24,7 +24,7 @@ enum FirebaseBootstrap {
         }
 
         if let appID = dict["GOOGLE_APP_ID"] as? String, appID == legacyAdminAppID {
-            return "GoogleService-Info.plist abhi admin app (jbmrsportsott) ka hai. Firebase Console → Add iOS app → com.jbmrsports.ott → naya plist replace karo."
+            return "GoogleService-Info.plist abhi admin app (jbmrsportsott) ka hai. Firebase Console → Add iOS app → in.jbmrsports.ott → naya plist replace karo."
         }
 
         return nil
@@ -35,15 +35,25 @@ final class PhoneAuthUIDelegate: NSObject, AuthUIDelegate {
     static let shared = PhoneAuthUIDelegate()
 
     func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        guard let presenter = topViewController() else {
-            completion?()
-            return
+        DispatchQueue.main.async { [weak self] in
+            guard let presenter = self?.topViewController() else {
+                completion?()
+                return
+            }
+            if presenter.presentedViewController != nil {
+                presenter.dismiss(animated: false) {
+                    presenter.present(viewControllerToPresent, animated: flag, completion: completion)
+                }
+            } else {
+                presenter.present(viewControllerToPresent, animated: flag, completion: completion)
+            }
         }
-        presenter.present(viewControllerToPresent, animated: flag, completion: completion)
     }
 
     func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
-        topViewController()?.dismiss(animated: flag, completion: completion)
+        DispatchQueue.main.async { [weak self] in
+            self?.topViewController()?.dismiss(animated: flag, completion: completion)
+        }
     }
 
     private func topViewController() -> UIViewController? {

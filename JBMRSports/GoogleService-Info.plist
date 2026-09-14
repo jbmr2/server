@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>692709551364-o40rru1l3t6h26li8uegd5jq85p4e17q.apps.googleusercontent.com</string>
+	<string>692709551364-jjqshfv8votfcm9pgqrq0vjbcja1p9l2.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.692709551364-o40rru1l3t6h26li8uegd5jq85p4e17q</string>
+	<string>com.googleusercontent.apps.692709551364-jjqshfv8votfcm9pgqrq0vjbcja1p9l2</string>
 	<key>API_KEY</key>
 	<string>AIzaSyDrrbrXoD3VHnWbw5WexMbekQwVlaiygKQ</string>
 	<key>GCM_SENDER_ID</key>
@@ -29,7 +29,7 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:692709551364:ios:79dc736ba5a2a50e45f451</string>
+	<string>1:692709551364:ios:ed32b37739e465d745f451</string>
 	<key>DATABASE_URL</key>
 	<string>https://ncrplt20-1c022-default-rtdb.asia-southeast1.firebasedatabase.app</string>
 </dict>

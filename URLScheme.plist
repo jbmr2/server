@@ -2,6 +2,23 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-4073629083284169~236964443</string>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>4fzdc2evr5.skadnetwork</string>
+		</dict>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>2fnua5tdw4.skadnetwork</string>
+		</dict>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -10,7 +27,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>jbmrsports</string>
-				<string>com.googleusercontent.apps.692709551364-o40rru1l3t6h26li8uegd5jq85p4e17q</string>
+				<string>com.googleusercontent.apps.692709551364-jjqshfv8votfcm9pgqrq0vjbcja1p9l2</string>
 			</array>
 		</dict>
 	</array>

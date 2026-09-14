@@ -10,7 +10,11 @@ struct ExploreView: View {
     @State private var pickedDate = Date()
 
     private var filteredMatches: [ScheduleMatch] {
-        store.scheduleMatches
+        store.scheduleMatches.filter { $0.isOn(calendarDay: pickedDate) }
+    }
+
+    private var isViewingToday: Bool {
+        Calendar.current.isDateInToday(pickedDate)
     }
 
     private var tournamentGroups: [(String, [ScheduleMatch])] {
@@ -50,13 +54,20 @@ struct ExploreView: View {
     private var todayDayName: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE"
-        return formatter.string(from: Date())
+        return formatter.string(from: pickedDate)
     }
 
     private var todayDateLabel: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "d MMM"
-        return formatter.string(from: Date())
+        return formatter.string(from: pickedDate)
+    }
+
+    private var dateSectionTitle: String {
+        if Calendar.current.isDateInToday(pickedDate) { return "Today" }
+        if Calendar.current.isDateInTomorrow(pickedDate) { return "Tomorrow" }
+        if Calendar.current.isDateInYesterday(pickedDate) { return "Yesterday" }
+        return todayDayName
     }
 
     var body: some View {
@@ -131,8 +142,8 @@ struct ExploreView: View {
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("Done") {
-                                scrollToToday = true
                                 showDatePicker = false
+                                scrollToToday = true
                             }
                         }
                     }
@@ -149,7 +160,9 @@ struct ExploreView: View {
             Text("No matches scheduled")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.85))
-            Text("Check back soon for upcoming fixtures")
+            Text(isViewingToday
+                ? "Check back soon for upcoming fixtures"
+                : "No fixtures on \(todayDateLabel)")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.muted)
         }
@@ -160,10 +173,11 @@ struct ExploreView: View {
 
     private var todayFAB: some View {
         Button {
+            pickedDate = Date()
             scrollToToday = true
         } label: {
             HStack(spacing: 6) {
-                Text("Today")
+                Text(isViewingToday ? "Today" : dateSectionTitle)
                     .font(.system(size: 13, weight: .bold))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .bold))
@@ -197,7 +211,7 @@ struct ExploreView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(todayDayName)
+                    Text(dateSectionTitle)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.muted)
                         .textCase(.uppercase)
