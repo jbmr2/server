@@ -10,13 +10,7 @@ struct PlayerProfileView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 14) {
-                    Image("UserAvatar")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 64, height: 64)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Theme.accent.opacity(0.5), lineWidth: 1.5))
-
+                    ProfileAvatarView(size: 64)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(authStore.displayName)
                             .font(.system(size: 18, weight: .bold))
@@ -28,9 +22,12 @@ struct PlayerProfileView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 20)
+                .padding(.bottom, 12)
 
                 VStack(spacing: 0) {
+                    menuNav(icon: "pencil", title: "Edit Profile") {
+                        EditProfileView()
+                    }
                     menuNav(icon: "bookmark", title: "My Watchlist") {
                         WatchlistView(tab: $tab, showSearch: $showSearch)
                     }

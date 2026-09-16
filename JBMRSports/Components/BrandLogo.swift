@@ -21,15 +21,7 @@ struct UserAvatarButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image("UserAvatar")
-                .resizable()
-                .scaledToFill()
-                .frame(width: 30, height: 30)
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(Theme.accent, lineWidth: 1.5)
-                )
+            ProfileAvatarView(size: 30)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Profile")

@@ -41,9 +41,12 @@ final class FirestoreUserService {
         let ref = db.collection("users").document(user.uid)
         let existing = try await ref.getDocument()
 
-        if existing.exists, var profile = try? existing.data(as: FirestoreUserProfile.self) {
-            profile.lastLoginAt = now
-            try ref.setData(from: profile, merge: true)
+        if existing.exists {
+            try await ref.updateData([
+                "lastLoginAt": now,
+                "phoneE164": e164,
+                "phoneNational": national
+            ])
             return
         }
 
@@ -56,5 +59,80 @@ final class FirestoreUserService {
             displayName: national.count >= 4 ? "User ••••\(national.suffix(4))" : "JBMR User"
         )
         try ref.setData(from: profile)
+    }
+
+    func fetchPinHash() async throws -> String? {
+        guard let uid = Auth.auth().currentUser?.uid else { return nil }
+        let snapshot = try await db.collection("users").document(uid).getDocument()
+        return snapshot.data()?["pinHash"] as? String
+    }
+
+    func savePinHash(_ hash: String, phone: String? = nil) async throws {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        var payload: [String: Any] = [
+            "pinHash": hash,
+            "pinUpdatedAt": FieldValue.serverTimestamp()
+        ]
+        if let phone, phone.count == 10 {
+            payload["phoneNational"] = phone
+            payload["pinPhone"] = phone
+        }
+        try await db.collection("users").document(uid).setData(payload, merge: true)
+    }
+
+    func updateDisplayName(_ name: String) async throws {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        try await db.collection("users").document(uid).setData([
+            "displayName": name,
+            "profileUpdatedAt": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+
+    func fetchPinForPhone(_ phone: String) async throws -> (uid: String, hash: String)? {
+        let digits = phone.filter(\.isWholeNumber)
+        guard digits.count == 10 else { return nil }
+        let snapshot = try await db.collection("phonePins").document(digits).getDocument()
+        guard snapshot.exists,
+              let uid = snapshot.data()?["uid"] as? String, !uid.isEmpty,
+              let hash = snapshot.data()?["pinHash"] as? String, !hash.isEmpty else {
+            return nil
+        }
+        return (uid, hash)
+    }
+
+    func savePhonePinLookup(uid: String, phone: String, hash: String) async throws {
+        guard phone.count == 10, !uid.isEmpty, !hash.isEmpty else { return }
+        try await db.collection("phonePins").document(phone).setData([
+            "uid": uid,
+            "pinHash": hash,
+            "updatedAt": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+
+    func verifyPinLogin(phone: String, pin: String) async throws -> (uid: String, phone: String)? {
+        let digits = phone.filter(\.isWholeNumber)
+        let pinDigits = pin.filter(\.isWholeNumber)
+        guard digits.count == 10, pinDigits.count == 4 else { return nil }
+        guard let url = URL(string: "https://asia-southeast1-ncrplt20-1c022.cloudfunctions.net/verifyPinLogin") else {
+            return nil
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 20
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "phone": digits,
+            "pin": pinDigits
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        if code == 200, json["ok"] as? Bool == true, let uid = json["uid"] as? String, !uid.isEmpty {
+            return (uid, digits)
+        }
+        if let message = json["error"] as? String, !message.isEmpty {
+            throw NSError(domain: "JBMRPin", code: code, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+        return nil
     }
 }

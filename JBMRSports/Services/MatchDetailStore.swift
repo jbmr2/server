@@ -61,7 +61,7 @@ final class MatchDetailStore: ObservableObject {
             guard let pair else {
                 if !hadDetail {
                     detail = nil
-                    errorMessage = "Match Firebase mein nahi — Admin se tournament ON karo"
+                    errorMessage = "Yeh match abhi available nahi hai"
                 }
                 return
             }

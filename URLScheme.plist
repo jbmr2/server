@@ -2,8 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-4073629083284169~236964443</string>
+	<string>ca-app-pub-4073629083284169~0236964443</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

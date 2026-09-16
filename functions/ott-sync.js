@@ -16,6 +16,12 @@ const R2 = {
   publicBase: (process.env.R2_PUBLIC_BASE_URL || "").replace(/\/$/, ""),
 };
 
+/** [timestamp − 5s, timestamp + 5s]. Max 10s. Score ke 5s baad cut so shot/boundary complete. */
+const CLIP_DURATION_SECONDS = 10;
+const CLIP_AFTER_SCORE_SECONDS = 5;
+/** end = elapsed − endLag → −5 means end at timestamp + 5s. */
+const CLIP_END_LAG_SECONDS = -CLIP_AFTER_SCORE_SECONDS;
+
 function str(v) {
   if (v == null) return "";
   if (typeof v === "string") return v;
@@ -106,6 +112,13 @@ function buildFirebaseMatch(md, existingM, complete) {
       videoPath: str(old?.videoPath) || ball.videoPath,
       sortKey: ball.innings * 10000 + ball.over * 10 + ball.ball,
     };
+    if (old?.clipStartSeconds != null) ballsOut[ball.id].clipStartSeconds = old.clipStartSeconds;
+    if (old?.clipDurationSeconds != null) ballsOut[ball.id].clipDurationSeconds = old.clipDurationSeconds;
+    if (old?.clipBytes != null) ballsOut[ball.id].clipBytes = old.clipBytes;
+    if (old?.clipAt) ballsOut[ball.id].clipAt = old.clipAt;
+    if (old?.clipAfterScoreSeconds != null) {
+      ballsOut[ball.id].clipAfterScoreSeconds = old.clipAfterScoreSeconds;
+    }
   }
 
   const team1 = md.team1 ?? {};
@@ -159,6 +172,7 @@ function buildFirebaseMatch(md, existingM, complete) {
     "streamCustomerSubdomain",
     "streamStartedAt",
     "streamRecordingVideoId",
+    "streamRecordingStartedAt",
   ]) {
     const v = str(existingM[key]);
     if (v) matchRow[key] = v;
@@ -167,11 +181,37 @@ function buildFirebaseMatch(md, existingM, complete) {
   return { matchRow, complete };
 }
 
-function pendingClipBall(matchRow) {
+function clipUsesLiveInputId(videoUrl, liveInputId) {
+  const url = str(videoUrl);
+  const inputId = str(liveInputId);
+  return Boolean(url && inputId && url.includes(`/${inputId}/clip.mp4`));
+}
+
+function clipDurationFromUrl(videoUrl) {
+  const m = str(videoUrl).match(/[?&]duration=(\d+(?:\.\d+)?)s/i);
+  return m ? Number(m[1]) : 0;
+}
+
+function ballNeedsClip(ball, liveInputId) {
+  const url = str(ball?.videoUrl);
+  if (!url) return true;
+  // Instant clips must use the recording UID, not the live input id.
+  if (clipUsesLiveInputId(url, liveInputId)) return true;
+  const saved = Number(ball?.clipDurationSeconds) || 0;
+  const fromUrl = clipDurationFromUrl(url);
+  const duration = saved > 0 ? saved : fromUrl;
+  if (duration !== CLIP_DURATION_SECONDS) return true;
+  const after = Number(ball?.clipAfterScoreSeconds);
+  if (after !== CLIP_AFTER_SCORE_SECONDS) return true;
+  return false;
+}
+
+function pendingClipBalls(matchRow, liveInputId, limit = 4) {
   const balls = objectMap(matchRow.balls);
   return Object.values(balls)
-    .filter((b) => !str(b.videoUrl))
-    .sort((a, b) => (a.sortKey ?? 0) - (b.sortKey ?? 0))[0];
+    .filter((b) => ballNeedsClip(b, liveInputId))
+    .sort((a, b) => (a.sortKey ?? 0) - (b.sortKey ?? 0))
+    .slice(0, Math.max(1, limit));
 }
 
 async function fetchJSON(url) {
@@ -215,38 +255,83 @@ async function cfJSON(path) {
   return data.result;
 }
 
-async function resolveRecordingId(liveInputId) {
-  const meta = await resolveRecordingMeta(liveInputId, "");
-  return meta.videoId;
+async function fetchPreviewHeaders(id, previewSeconds = 30) {
+  const url = `https://${clipHost()}/${id}/manifest/video.m3u8?duration=${previewSeconds}s`;
+  const res = await fetch(url, {
+    method: "HEAD",
+    redirect: "follow",
+    signal: AbortSignal.timeout(15000),
+  });
+  const mediaId = str(res.headers.get("stream-media-id"));
+  const previewStart = parseFloat(res.headers.get("preview-start-seconds") || "");
+  return {
+    ok: res.ok,
+    mediaId,
+    previewStartSeconds: Number.isFinite(previewStart) ? previewStart : NaN,
+    previewSeconds,
+    durationSeconds: Number.isFinite(previewStart)
+      ? previewStart + previewSeconds
+      : NaN,
+  };
+}
+
+function pickLiveRecording(videos) {
+  if (!Array.isArray(videos) || !videos.length) return null;
+  const live = videos.find((v) => {
+    const state = str(v?.status?.state || v?.status).toLowerCase();
+    return state.includes("live");
+  });
+  return live || videos[videos.length - 1];
 }
 
 async function resolveRecordingMeta(liveInputId, recordingVideoId) {
+  const inputId = str(liveInputId);
   let videoId = str(recordingVideoId);
-  if (!videoId) {
-    const list = await cfJSON(
-      `accounts/${STREAM.accountId}/stream/live_inputs/${liveInputId}/videos`
-    );
-    const videos = Array.isArray(list) ? list : [];
-    if (videos.length && videos[videos.length - 1]?.uid) {
-      videoId = String(videos[videos.length - 1].uid);
-    } else {
-      const previewUrl = `https://${clipHost()}/${liveInputId}/manifest/video.m3u8?duration=30s`;
-      const res = await fetch(previewUrl, { method: "HEAD", redirect: "follow" });
-      const mediaId = res.headers.get("stream-media-id");
-      if (mediaId) videoId = mediaId;
+  // Live input id is not a recording UID — clipping it uses encoder-start
+  // offsets while we were measuring from input-created time (wrong over).
+  if (!videoId || videoId === inputId) {
+    videoId = "";
+    if (STREAM.accountId && STREAM.apiToken && inputId) {
+      try {
+        const list = await cfJSON(
+          `accounts/${STREAM.accountId}/stream/live_inputs/${inputId}/videos`
+        );
+        const picked = pickLiveRecording(Array.isArray(list) ? list : []);
+        if (picked?.uid) videoId = String(picked.uid);
+      } catch {
+        /* fall through to HLS headers */
+      }
+    }
+    if (!videoId && inputId) {
+      const preview = await fetchPreviewHeaders(inputId, 30);
+      if (preview.mediaId && preview.mediaId !== inputId) videoId = preview.mediaId;
     }
   }
-  if (!videoId) throw new Error("Recording video ID nahi mila");
+  if (!videoId) throw new Error("Recording video ID nahi mila (encoder/DVR not ready)");
 
   let recordingStartedAt = NaN;
-  try {
-    const detail = await cfJSON(`accounts/${STREAM.accountId}/stream/${videoId}`);
-    if (detail?.created) recordingStartedAt = new Date(detail.created).getTime();
-  } catch {
-    /* fallback to streamStartedAt in clip window */
+  let durationSeconds = NaN;
+
+  if (STREAM.accountId && STREAM.apiToken) {
+    try {
+      const detail = await cfJSON(`accounts/${STREAM.accountId}/stream/${videoId}`);
+      if (detail?.created) recordingStartedAt = new Date(detail.created).getTime();
+      const d = Number(detail?.duration);
+      if (Number.isFinite(d) && d > 0) durationSeconds = d;
+    } catch {
+      /* live-inprogress videos sometimes 404 until ready */
+    }
   }
 
-  return { videoId, recordingStartedAt };
+  const preview = await fetchPreviewHeaders(videoId, 30);
+  if (Number.isFinite(preview.durationSeconds)) {
+    durationSeconds = preview.durationSeconds;
+    if (Number.isNaN(recordingStartedAt)) {
+      recordingStartedAt = Date.now() - preview.durationSeconds * 1000;
+    }
+  }
+
+  return { videoId, recordingStartedAt, durationSeconds };
 }
 
 function ballScoredAtFromComplete(complete, ballId, ballRow) {
@@ -261,15 +346,17 @@ function ballScoredAtFromComplete(complete, ballId, ballRow) {
         (b.ballNumber ?? b.ball ?? 1) === ballRow.ball
     );
   }
-  return str(hit?.createdAt) || str(hit?.timestamp) || "";
+  return str(hit?.createdAt) || str(hit?.updatedAt) || str(hit?.timestamp) || "";
 }
 
 function computeClipWindow({
   ballScoredAt,
   recordingStartedAt,
   streamStartedAt,
-  durationSeconds = 12,
-  endLagSeconds = 4,
+  recordingDurationSeconds = NaN,
+  durationSeconds = CLIP_DURATION_SECONDS,
+  endLagSeconds = CLIP_END_LAG_SECONDS,
+  liveEdgeBufferSeconds = 2,
 }) {
   let recStart = recordingStartedAt;
   if (!recStart || Number.isNaN(recStart)) {
@@ -277,23 +364,57 @@ function computeClipWindow({
   }
   if (Number.isNaN(recStart)) throw new Error("Invalid recording start time");
 
-  const endAnchorMs = ballScoredAt
-    ? new Date(ballScoredAt).getTime()
-    : Date.now();
+  if (!ballScoredAt) {
+    throw new Error("ball createdAt missing — skip clip (no Date.now fallback)");
+  }
+  const endAnchorMs = new Date(ballScoredAt).getTime();
   if (Number.isNaN(endAnchorMs)) throw new Error("Invalid ballScoredAt");
 
   const elapsed = (endAnchorMs - recStart) / 1000;
+  if (elapsed < 1) {
+    throw new Error(
+      `ball scored ${elapsed.toFixed(1)}s after encoder start — wait/skip`
+    );
+  }
+
+  // Clip = [timestamp − 5s, timestamp + 5s]. endLag −5 → end at score + 5s.
   const end = Math.max(0, elapsed - endLagSeconds);
   const start = Math.max(0, end - durationSeconds);
-  return { startSeconds: start, durationSeconds };
+
+  if (Number.isFinite(recordingDurationSeconds) && recordingDurationSeconds > 0) {
+    const clipEnd = start + durationSeconds;
+    if (clipEnd > recordingDurationSeconds - 1) {
+      throw new Error(
+        `need DVR past ${Math.floor(clipEnd)}s (boundary), have ${Math.floor(recordingDurationSeconds)}s — wait`
+      );
+    }
+    const maxStart = recordingDurationSeconds - liveEdgeBufferSeconds - durationSeconds;
+    if (start > recordingDurationSeconds - 3) {
+      throw new Error(
+        `clip time ${Math.floor(start)}s beyond recording ${Math.floor(recordingDurationSeconds)}s (live edge / DVR not ready)`
+      );
+    }
+    if (start > maxStart && maxStart >= 0) {
+      throw new Error(
+        `clip time ${Math.floor(start)}s too close to live edge (${Math.floor(recordingDurationSeconds)}s recorded)`
+      );
+    }
+  }
+
+  return { startSeconds: start, durationSeconds, elapsedSeconds: elapsed };
 }
 
-async function downloadClip(videoId, startSeconds, durationSeconds) {
+async function downloadClip(videoId, startSeconds, durationSeconds, filename) {
   const time = Math.max(0, Math.floor(startSeconds));
   const duration = Math.min(60, Math.max(3, Math.floor(durationSeconds)));
-  const url = `https://${clipHost()}/${videoId}/clip.mp4?time=${time}s&duration=${duration}s`;
+  const url = `https://${clipHost()}/${videoId}/clip.mp4?time=${time}s&duration=${duration}s&filename=${encodeURIComponent(filename || "ball")}.mp4`;
   const res = await fetch(url, { signal: AbortSignal.timeout(120000) });
-  if (!res.ok) throw new Error(`Clip download ${res.status}`);
+  if (!res.ok) {
+    const hint = (await res.text().catch(() => "")).slice(0, 160).replace(/\s+/g, " ");
+    throw new Error(
+      `Clip download ${res.status} time=${time}s duration=${duration}s vid=${videoId}${hint ? ` ${hint}` : ""}`
+    );
+  }
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length < 1024) throw new Error("Clip too small");
   return buf;
@@ -307,16 +428,16 @@ async function clipBall({
   objectKey,
   ballId,
 }) {
-  const { videoId, recordingStartedAt } = await resolveRecordingMeta(
-    liveInputId,
-    recordingVideoId
-  );
+  const { videoId, recordingStartedAt, durationSeconds: recordingDurationSeconds } =
+    await resolveRecordingMeta(liveInputId, recordingVideoId);
   const { startSeconds, durationSeconds } = computeClipWindow({
     ballScoredAt,
     recordingStartedAt,
     streamStartedAt,
+    recordingDurationSeconds,
   });
-  const mp4 = await downloadClip(videoId, startSeconds, durationSeconds);
+  const mp4 = await downloadClip(videoId, startSeconds, durationSeconds, ballId);
+  const bytes = mp4.length;
 
   let videoUrl;
   let videoPath = objectKey;
@@ -349,15 +470,54 @@ async function clipBall({
     videoPath = "";
   }
 
-  return { videoUrl, videoPath, recordingVideoId: videoId, recordingStartedAt };
+  return {
+    videoUrl,
+    videoPath,
+    recordingVideoId: videoId,
+    recordingStartedAt,
+    startSeconds,
+    durationSeconds,
+    bytes,
+  };
+}
+
+function liveOttMatchIds(firebaseTournaments) {
+  const out = [];
+  for (const [tournamentId, t] of Object.entries(firebaseTournaments || {})) {
+    if (t?.showOnOtt !== true) continue;
+    for (const [matchId, m] of Object.entries(objectMap(t.matches))) {
+      if (isLive(m?.status)) out.push({ tournamentId, matchId });
+    }
+  }
+  return out;
 }
 
 async function runOttLiveSync(db) {
   const ottSnap = await db.ref("ott").once("value");
   const ott = ottSnap.val() || {};
   const firebaseTournaments = ott.tournaments || {};
+  const worker = ott.worker || {};
+  const liveNow = liveOttMatchIds(firebaseTournaments);
+
+  if (liveNow.length === 0) {
+    const lastDiscovery = Date.parse(str(worker.lastDiscoveryAt)) || 0;
+    const idleMs = Date.now() - lastDiscovery;
+    if (idleMs < 5 * 60 * 1000) {
+      await db.ref("ott/worker").update({
+        lastRunAt: new Date().toISOString(),
+        lastSyncedMatches: 0,
+        lastClippedBalls: 0,
+        idle: true,
+        running: true,
+        lastLogs: ["idle — koi live match nahi, API skip"],
+      });
+      return { synced: 0, clipped: 0, logs: ["idle skip"], idle: true };
+    }
+  }
+
   const listRoot = await fetchTournamentList();
   const tournaments = listRoot.tournaments || [];
+  await db.ref("ott/worker/lastDiscoveryAt").set(new Date().toISOString());
 
   let synced = 0;
   let clipped = 0;
@@ -405,9 +565,9 @@ async function runOttLiveSync(db) {
       synced += 1;
       logs.push(`synced ${matchId} · ${Object.keys(matchRow.balls || {}).length} balls`);
 
-      const ball = pendingClipBall(matchRow);
       const streamId = str(matchRow.streamLiveInputId);
-      if (ball && streamId && str(ball.videoUrl) === "") {
+      const toClip = streamId ? pendingClipBalls(matchRow, streamId, 4) : [];
+      for (const ball of toClip) {
         try {
           const ballScoredAt = ballScoredAtFromComplete(complete, ball.id, ball);
           const objectKey = `ballVideos/${tournamentId}/${matchId}/${ball.id}.mp4`;
@@ -430,9 +590,15 @@ async function runOttLiveSync(db) {
             note: ball.note ?? "",
             videoUrl: result.videoUrl,
             videoPath: result.videoPath,
+            clipStartSeconds: Math.floor(result.startSeconds),
+            clipDurationSeconds: Math.floor(result.durationSeconds),
+            clipAfterScoreSeconds: CLIP_AFTER_SCORE_SECONDS,
+            clipBytes: result.bytes || 0,
+            clipAt: new Date().toISOString(),
             sortKey,
           });
-          if (result.recordingVideoId) {
+          if (result.recordingVideoId && result.recordingVideoId !== streamId) {
+            matchRow.streamRecordingVideoId = result.recordingVideoId;
             await db
               .ref(`ott/tournaments/${tournamentId}/matches/${matchId}/streamRecordingVideoId`)
               .set(result.recordingVideoId);
@@ -443,9 +609,12 @@ async function runOttLiveSync(db) {
               .set(new Date(result.recordingStartedAt).toISOString());
           }
           clipped += 1;
-          logs.push(`clip ${ball.id} OK`);
+          logs.push(
+            `clip ${ball.id} OK t=${Math.floor(result.startSeconds)}s d=${Math.floor(result.durationSeconds)}s vid=${result.recordingVideoId}`
+          );
         } catch (err) {
           logs.push(`clip ${ball.id} FAIL: ${err.message}`);
+          break;
         }
       }
     }
@@ -465,6 +634,7 @@ async function runOttLiveSync(db) {
     lastClippedBalls: clipped,
     lastLogs: logs.slice(-20),
     running: true,
+    idle: synced === 0,
   });
 
   return { synced, clipped, logs };

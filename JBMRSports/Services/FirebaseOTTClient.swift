@@ -347,6 +347,27 @@ enum FirebaseOTTClient {
                         )
                     )
                 }
+
+                let status = (m.status ?? "").lowercased()
+                let isLive = status == "live" || status == "in progress"
+                if isLive, let liveRaw = m.liveUrl, let liveURL = CrickAPI.absoluteURL(from: liveRaw) {
+                    clips.insert(
+                        ShortClip(
+                            id: "live-\(m.matchId ?? vs)",
+                            creator: "@jbmr_sports",
+                            caption: "LIVE · \(vs)",
+                            matchTag: tag,
+                            audio: "Live stream",
+                            likes: "",
+                            comments: "",
+                            shares: "",
+                            imageName: "HeroStadiumNight",
+                            isVerified: true,
+                            videoURL: liveURL
+                        ),
+                        at: 0
+                    )
+                }
             }
         }
         return clips

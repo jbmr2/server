@@ -31,22 +31,32 @@ enum FirebaseBootstrap {
     }
 }
 
+enum PhoneAuthAPNs {
+    /// Xcode Debug on a device uses the development (sandbox) APNs cert. Tagging it as production
+    /// makes silent verification miss, then Firebase shows “I’m not a robot” and SMS is delayed/lost.
+    static var tokenType: AuthAPNSTokenType {
+        #if DEBUG
+        .sandbox
+        #else
+        .prod
+        #endif
+    }
+
+    static func apply(_ token: Data) {
+        Auth.auth().setAPNSToken(token, type: tokenType)
+    }
+}
+
 final class PhoneAuthUIDelegate: NSObject, AuthUIDelegate {
     static let shared = PhoneAuthUIDelegate()
 
     func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async { [weak self] in
-            guard let presenter = self?.topViewController() else {
+        DispatchQueue.main.async {
+            guard let host = self.topViewController() else {
                 completion?()
                 return
             }
-            if presenter.presentedViewController != nil {
-                presenter.dismiss(animated: false) {
-                    presenter.present(viewControllerToPresent, animated: flag, completion: completion)
-                }
-            } else {
-                presenter.present(viewControllerToPresent, animated: flag, completion: completion)
-            }
+            host.present(viewControllerToPresent, animated: flag, completion: completion)
         }
     }
 

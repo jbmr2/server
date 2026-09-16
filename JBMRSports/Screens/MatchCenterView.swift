@@ -27,6 +27,9 @@ struct MatchCenterView: View {
     @State private var playerControlsVisible = true
     @State private var didLoadPlayer = false
     @State private var isPlayingBallClip = false
+    @State private var youtubePlaying = false
+    @State private var cloudflarePlaying = true
+    @State private var hidePlayerChromeTask: Task<Void, Never>?
 
     init(match: FeaturedMatch, tab: Binding<AppTab>, showSearch: Binding<Bool>, embedsInTab: Bool = false) {
         self.match = match
@@ -290,7 +293,17 @@ struct MatchCenterView: View {
     private var isCurrentlyLive: Bool {
         let m = resolvedMatch
         if m.isLive { return true }
-        return (detail?.status ?? "").lowercased() == "live"
+        if m.heroState == .live { return true }
+        if m.badge.uppercased().contains("LIVE") { return true }
+        if store.scheduleMatches.first(where: { $0.id == match.id })?.status == .live { return true }
+        let status = (detail?.status ?? "").lowercased()
+        return status == "live" || status == "in progress" || status.contains("live")
+    }
+
+    private var cloudflareEmbedIsLive: Bool {
+        if isCurrentlyLive { return true }
+        guard let url = playbackURL else { return false }
+        return CloudflareStreamURL.looksLikeLiveManifest(url)
     }
 
     private var playerScoreLabel: String {
@@ -333,15 +346,15 @@ struct MatchCenterView: View {
                     .padding(.vertical, 10)
                     .background(Theme.card)
             } else if playbackURL == nil, isCurrentlyLive {
-                Text("Live stream link missing — Admin app se Refresh HLS dabao")
+                Text("Live video hasn’t started yet. Scorecard and clips below still work.")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(Theme.card)
-            } else if let error = playback.playbackError {
-                Text("Stream error: \(error)")
+            } else if cloudflareLiveEmbed == nil, let error = playback.playbackError {
+                Text(error)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.liveRed)
                     .frame(maxWidth: .infinity)
@@ -359,26 +372,43 @@ struct MatchCenterView: View {
         }
     }
 
+    private var isYouTubePlayback: Bool {
+        guard !isPlayingBallClip, let url = playbackURL else { return false }
+        return YouTubeURL.isYouTube(url)
+    }
+
+    private var youtubeVideoId: String? {
+        guard isYouTubePlayback, let url = playbackURL else { return nil }
+        return YouTubeURL.videoId(from: url)
+    }
+
     private var cloudflareLiveEmbed: (videoId: String, subdomain: String)? {
-        guard !isPlayingBallClip else { return nil }
-        guard isCurrentlyLive, let url = playbackURL else { return nil }
-        // Ball clips (.mp4) must use native AVPlayer, not the live iframe embed.
-        let path = url.path.lowercased()
-        if path.contains("clip.mp4") || path.hasSuffix(".mp4") { return nil }
-        guard CloudflareStreamURL.isCloudflareStream(url) else { return nil }
-        if let videoId = CloudflareStreamURL.videoId(from: url) {
-            let subdomain = CloudflareStreamURL.customerSubdomain(from: url) ?? "febottgr27fxjy24"
-            return (videoId, subdomain)
-        }
-        return nil
+        guard !isPlayingBallClip, let url = playbackURL else { return nil }
+        guard CloudflareStreamURL.shouldUseIframeEmbed(url) else { return nil }
+        guard let videoId = CloudflareStreamURL.videoId(from: url) else { return nil }
+        let subdomain = CloudflareStreamURL.customerSubdomain(from: url) ?? "febottgr27fxjy24"
+        return (videoId, subdomain)
     }
 
     private func playerSurface(fullscreen: Bool) -> some View {
         ZStack {
-            if let embed = cloudflareLiveEmbed {
+            if let ytId = youtubeVideoId {
+                YouTubePlayPauseView(
+                    videoId: ytId,
+                    autoplay: isCurrentlyLive || AppSettings.autoPlay,
+                    muted: false,
+                    looping: false,
+                    showsPlayButton: false,
+                    isPlaying: $youtubePlaying
+                )
+                .frame(maxWidth: .infinity, maxHeight: fullscreen ? .infinity : nil)
+                .clipped()
+            } else if let embed = cloudflareLiveEmbed {
                 CloudflareStreamEmbedView(
                     videoId: embed.videoId,
-                    customerSubdomain: embed.subdomain
+                    customerSubdomain: embed.subdomain,
+                    isLive: cloudflareEmbedIsLive,
+                    isPlaying: $cloudflarePlaying
                 )
                 .frame(maxWidth: .infinity, maxHeight: fullscreen ? .infinity : nil)
                 .clipped()
@@ -396,26 +426,17 @@ struct MatchCenterView: View {
                         .tint(Theme.accent)
                         .scaleEffect(1.2)
                 }
-
-                if !fullscreen, shouldShowArtworkOverlay {
-                    MatchArtwork(match: resolvedMatch)
-                        .frame(maxWidth: .infinity, maxHeight: fullscreen ? .infinity : nil)
-                        .clipped()
-                        .allowsHitTesting(false)
-                }
             }
 
-            if cloudflareLiveEmbed == nil, playerControlsVisible {
-                LinearGradient(
-                    colors: [.black.opacity(0.35), .clear, .black.opacity(0.75)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .allowsHitTesting(false)
-                .transition(.opacity)
+            if cloudflareLiveEmbed == nil, !showVideoStartAd, !isMatchVideoPlaying {
+                MatchArtwork(match: resolvedMatch)
+                    .frame(maxWidth: .infinity, maxHeight: fullscreen ? .infinity : nil)
+                    .clipped()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
 
-            if cloudflareLiveEmbed == nil, playerControlsVisible {
+            if cloudflareLiveEmbed == nil, !isYouTubePlayback, !isCurrentlyLive, playerControlsVisible {
                 VStack(spacing: 0) {
                     HStack {
                         if isCurrentlyLive {
@@ -487,33 +508,29 @@ struct MatchCenterView: View {
                                 .padding(.vertical, 3)
                                 .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.15)))
                         }
-                        Button {
-                            guard !showVideoStartAd, currentPlayURL != nil || match.videoURL != nil else { return }
-                            setPlayerFullscreen(!isPlayerFullscreen)
-                        } label: {
-                            Image(systemName: isPlayerFullscreen
-                                ? "arrow.down.right.and.arrow.up.left"
-                                : "arrow.up.left.and.arrow.down.right")
-                        }
-                        .buttonStyle(.plain)
                     }
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
+                    .padding(.leading, 12)
+                    .padding(.trailing, 52)
                     .padding(.vertical, fullscreen ? 20 : 10)
                     .background(Color.black.opacity(0.001))
                 }
                 .transition(.opacity)
             }
 
-            if cloudflareLiveEmbed == nil, !showVideoStartAd, playerControlsVisible || !playback.isPlaying {
+            if !showVideoStartAd, showsPlayerChrome {
                 Button {
-                    playback.toggle()
-                    if !playback.isPlaying {
-                        playerControlsVisible = true
+                    if isYouTubePlayback {
+                        youtubePlaying.toggle()
+                    } else if cloudflareLiveEmbed != nil {
+                        cloudflarePlaying.toggle()
+                    } else {
+                        playback.toggle()
                     }
+                    revealPlayerChrome()
                 } label: {
-                    Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: isMatchVideoPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: fullscreen ? 34 : 28, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: fullscreen ? 72 : 60, height: fullscreen ? 72 : 60)
@@ -521,6 +538,34 @@ struct MatchCenterView: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity)
+            }
+
+            if !showVideoStartAd, showsPlayerChrome,
+               currentPlayURL != nil || match.videoURL != nil {
+                VStack {
+                    Spacer(minLength: 0)
+                        .allowsHitTesting(false)
+                    HStack {
+                        Spacer(minLength: 0)
+                            .allowsHitTesting(false)
+                        Button {
+                            setPlayerFullscreen(!isPlayerFullscreen)
+                        } label: {
+                            Image(systemName: isPlayerFullscreen
+                                ? "arrow.down.right.and.arrow.up.left"
+                                : "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(.black.opacity(0.55)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isPlayerFullscreen ? "Exit Full Screen" : "Full Screen")
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, fullscreen ? 18 : 8)
+                }
                 .transition(.opacity)
             }
 
@@ -543,10 +588,56 @@ struct MatchCenterView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            guard cloudflareLiveEmbed == nil else { return }
-            guard !showVideoStartAd else { return }
+            handlePlayerTap()
+        }
+        .onAppear {
+            schedulePlayerChromeAutoHide()
+        }
+        .onChange(of: youtubePlaying) { _, _ in
+            if isYouTubePlayback { schedulePlayerChromeAutoHide() }
+        }
+        .onChange(of: playback.isPlaying) { _, _ in
+            if !isYouTubePlayback { schedulePlayerChromeAutoHide() }
+        }
+    }
+
+    private var isMatchVideoPlaying: Bool {
+        if isYouTubePlayback { return youtubePlaying }
+        if cloudflareLiveEmbed != nil { return cloudflarePlaying }
+        return playback.isPlaying
+    }
+
+    private var showsPlayerChrome: Bool {
+        playerControlsVisible || !isMatchVideoPlaying
+    }
+
+    private func handlePlayerTap() {
+        guard !showVideoStartAd else { return }
+        revealPlayerChrome()
+    }
+
+    private func revealPlayerChrome() {
+        hidePlayerChromeTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            playerControlsVisible = true
+        }
+        schedulePlayerChromeAutoHide()
+    }
+
+    private func schedulePlayerChromeAutoHide() {
+        hidePlayerChromeTask?.cancel()
+        if !isMatchVideoPlaying {
             withAnimation(.easeInOut(duration: 0.2)) {
-                playerControlsVisible.toggle()
+                playerControlsVisible = true
+            }
+            return
+        }
+        hidePlayerChromeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            guard !Task.isCancelled else { return }
+            guard isMatchVideoPlaying else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                playerControlsVisible = false
             }
         }
     }
@@ -554,7 +645,7 @@ struct MatchCenterView: View {
     private func setPlayerFullscreen(_ expanded: Bool) {
         guard isPlayerFullscreen != expanded else { return }
         if expanded {
-            playerControlsVisible = true
+            revealPlayerChrome()
         }
         withAnimation(.easeInOut(duration: 0.25)) {
             isPlayerFullscreen = expanded
@@ -932,13 +1023,10 @@ struct MatchCenterView: View {
                                 isDownloaded: downloadLibrary.isBallDownloaded(id: delivery.id),
                                 isDownloading: downloadLibrary.downloadingBallIds.contains(delivery.id),
                                 isInReel: reelStore.contains(id: delivery.id),
+                                liveFallback: canFallBackToLiveStream,
                                 onPlay: {
-                                    if downloadLibrary.playbackURL(for: delivery) != nil {
-                                        playBallClipWithAds(delivery)
-                                        section = .ballByBall
-                                    } else {
-                                        downloadLibrary.toastMessage = "Is ball pe video nahi hai"
-                                    }
+                                    playBallClipWithAds(delivery)
+                                    section = .ballByBall
                                 },
                                 onDownload: {
                                     guard let remote = delivery.videoURL else {
@@ -1216,18 +1304,23 @@ struct MatchCenterView: View {
         action?()
     }
 
-    private var shouldShowArtworkOverlay: Bool {
-        guard playback.hasMedia else { return true }
-        if isCurrentlyLive {
-            return !playback.isReady && !playback.isPlaying
-        }
-        return !playback.isPlaying && playback.progress < 0.02
-    }
-
     private func reloadLivePlaybackURL() {
         let latest = store.playbackURL(forMatchId: match.id) ?? resolvedMatch.videoURL
         guard let latest else { return }
         if currentPlayURL == latest, didLoadPlayer { return }
+        if YouTubeURL.isYouTube(latest) {
+            currentPlayURL = latest
+            didLoadPlayer = true
+            youtubePlaying = isCurrentlyLive || AppSettings.autoPlay
+            return
+        }
+        if CloudflareStreamURL.shouldUseIframeEmbed(latest) {
+            currentPlayURL = latest
+            didLoadPlayer = true
+            cloudflarePlaying = isCurrentlyLive || AppSettings.autoPlay
+            playback.pause()
+            return
+        }
         currentPlayURL = latest
         didLoadPlayer = true
         playback.replace(
@@ -1252,13 +1345,21 @@ struct MatchCenterView: View {
         showVideoStartAd = false
         bannerAdFallback = false
         onPlayerAdSkipped = nil
-        if isCurrentlyLive || AppSettings.autoPlay {
+        if cloudflareLiveEmbed == nil, isCurrentlyLive || AppSettings.autoPlay {
             playback.play()
         }
     }
 
+    private var canFallBackToLiveStream: Bool {
+        isCurrentlyLive && (store.playbackURL(forMatchId: match.id) ?? resolvedMatch.videoURL) != nil
+    }
+
     private func playBallClipWithAds(_ delivery: BallDelivery) {
         guard let url = downloadLibrary.playbackURL(for: delivery) else {
+            if canFallBackToLiveStream {
+                returnToLiveStream()
+                return
+            }
             downloadLibrary.toastMessage = "Is ball pe video nahi hai"
             return
         }
@@ -1272,7 +1373,7 @@ struct MatchCenterView: View {
             playback.replace(url: url, autoplay: true, isLive: false)
         }
 
-        guard store.adsEnabled else {
+        guard store.adsEnabled, !AdMobConfig.usesSampleAds else {
             finishPlayerAdAndContinue()
             return
         }
@@ -1383,12 +1484,13 @@ struct BallDeliveryCard: View {
     var isDownloaded: Bool = false
     var isDownloading: Bool = false
     var isInReel: Bool = false
+    var liveFallback: Bool = false
     var onPlay: (() -> Void)? = nil
     var onDownload: (() -> Void)? = nil
     var onAddToReel: ((BallDelivery) -> Void)? = nil
 
     private var canPlay: Bool {
-        isDownloaded || delivery.videoURL != nil
+        isDownloaded || delivery.videoURL != nil || liveFallback
     }
 
     var body: some View {
@@ -1420,9 +1522,13 @@ struct BallDeliveryCard: View {
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)
                 if delivery.videoURL != nil || isDownloaded {
-                    Text(isDownloaded ? "Downloaded" : "R2 video")
+                    Text(isDownloaded ? "Downloaded" : "Video")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(isDownloaded ? Theme.sixGreen : Theme.accent)
+                } else if liveFallback {
+                    Text("Live")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.liveRed)
                 }
                 if isInReel {
                     Text("In Reel")

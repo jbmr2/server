@@ -5,5 +5,19 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Phone → PIN hash lookup for device PIN login (get one number only; no list).
+    match /phonePins/{phone} {
+      allow get: if phone.matches('^[0-9]{10}$');
+      allow list: if false;
+      allow create, update: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasAll(['uid', 'pinHash']);
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    match /pinAttempts/{phone} {
+      allow read, write: if false;
+    }
   }
 }

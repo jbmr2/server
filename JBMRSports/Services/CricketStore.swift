@@ -202,7 +202,7 @@ final class CricketStore: ObservableObject {
             highlightClips = []
             shortClips = []
             if source != "Cache" {
-                errorMessage = "Firebase empty — Admin app se tournament ON karo"
+                errorMessage = "Matches couldn’t be loaded. Pull down to retry."
             }
             return
         }
@@ -214,7 +214,7 @@ final class CricketStore: ObservableObject {
             scheduleMatches = []
             tournamentCards = []
             if source != "Cache" {
-                errorMessage = "Firebase me show karne layak tournament nahi mila"
+                errorMessage = "No tournaments to show yet. Pull down to retry."
             }
             return
         }

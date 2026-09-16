@@ -9,7 +9,7 @@ struct WatchlistView: View {
     var body: some View {
         Group {
             if userLibrary.watchlist.isEmpty {
-                emptyState("No watchlist yet", subtitle: "Search se match bookmark karo")
+                emptyState("No watchlist yet", subtitle: "Bookmark a match from Search to see it here")
             } else {
                 List {
                     ForEach(userLibrary.watchlist) { item in
@@ -73,7 +73,7 @@ struct WatchHistoryView: View {
     var body: some View {
         Group {
             if userLibrary.watchHistory.isEmpty {
-                emptyState("No watch history", subtitle: "Koi match dekho — yahan dikhega")
+                emptyState("No watch history", subtitle: "Matches you open will appear here")
             } else {
                 List {
                     ForEach(userLibrary.watchHistory) { item in

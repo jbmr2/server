@@ -1,6 +1,7 @@
 import AVFoundation
 import AVKit
 import Combine
+import CoreMedia
 import SwiftUI
 
 enum StreamMedia {
@@ -22,14 +23,20 @@ final class StreamPlayback: ObservableObject {
 
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var failObserver: NSObjectProtocol?
+    private var errorLogObserver: NSObjectProtocol?
     private var statusObserver: NSKeyValueObservation?
     private let looping: Bool
-    private let isLiveStream: Bool
+    private var isLiveStream: Bool
+    private var lastURL: URL?
+    private var liveRetryCount = 0
+    private var retryWorkItem: DispatchWorkItem?
 
     init(url: URL?, autoplay: Bool = false, looping: Bool = false, muted: Bool = false, isLive: Bool = false) {
         self.looping = looping
         self.isLiveStream = isLive
         self.hasMedia = url != nil
+        self.lastURL = url
         if let url {
             Self.activateAudioSession()
             let item = Self.makePlayerItem(url: url, isLive: isLive)
@@ -37,117 +44,32 @@ final class StreamPlayback: ObservableObject {
             player.isMuted = muted
             player.automaticallyWaitsToMinimizeStalling = !isLive
             player.actionAtItemEnd = looping ? .none : .pause
-
-            statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    switch item.status {
-                    case .readyToPlay:
-                        self.isReady = true
-                        self.playbackError = nil
-                    case .failed:
-                        self.isReady = false
-                        self.playbackError = item.error?.localizedDescription ?? "Playback failed"
-                    default:
-                        break
-                    }
-                    let d = item.duration.seconds
-                    if d.isFinite, d > 0 {
-                        self.durationLabel = Self.format(d)
-                    }
-                }
-            }
-
-            timeObserver = player.addPeriodicTimeObserver(
-                forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
-                queue: .main
-            ) { [weak self] time in
-                guard let self else { return }
-                let current = time.seconds
-                let total = self.player.currentItem?.duration.seconds ?? 0
-                if total.isFinite, total > 0 {
-                    self.progress = min(max(current / total, 0), 1)
-                    self.currentLabel = Self.format(current)
-                    self.durationLabel = Self.format(total)
-                }
-                self.isPlaying = self.player.rate > 0
-            }
-
-            endObserver = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: item,
-                queue: .main
-            ) { [weak self] _ in
-                guard let self else { return }
-                if self.looping {
-                    self.player.seek(to: .zero)
-                    self.player.play()
-                    self.isPlaying = true
-                } else {
-                    self.isPlaying = false
-                    self.progress = 1
-                    self.onFinished?()
-                }
-            }
-
+            attachObservers(to: item)
             if autoplay {
                 player.play()
                 isPlaying = true
             }
         } else {
             player = AVPlayer()
+            player.automaticallyWaitsToMinimizeStalling = !isLive
         }
     }
 
-    func replace(url: URL?, autoplay: Bool = true, isLive: Bool? = nil) {
+    func replace(url: URL?, autoplay: Bool = true, isLive: Bool? = nil, isRetry: Bool = false) {
+        retryWorkItem?.cancel()
         player.pause()
         guard let url else { return }
         hasMedia = true
         playbackError = nil
+        lastURL = url
+        if !isRetry { liveRetryCount = 0 }
         Self.activateAudioSession()
         let live = isLive ?? isLiveStream
+        isLiveStream = live
         let item = Self.makePlayerItem(url: url, isLive: live)
         player.automaticallyWaitsToMinimizeStalling = !live
         player.replaceCurrentItem(with: item)
-        statusObserver?.invalidate()
-        statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                switch item.status {
-                case .readyToPlay:
-                    self.isReady = true
-                    self.playbackError = nil
-                case .failed:
-                    self.isReady = false
-                    self.playbackError = item.error?.localizedDescription ?? "Playback failed"
-                default:
-                    break
-                }
-                let d = item.duration.seconds
-                if d.isFinite, d > 0 {
-                    self.durationLabel = Self.format(d)
-                }
-            }
-        }
-        if let endObserver {
-            NotificationCenter.default.removeObserver(endObserver)
-        }
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: item,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            if self.looping {
-                self.player.seek(to: .zero)
-                self.player.play()
-                self.isPlaying = true
-            } else {
-                self.isPlaying = false
-                self.progress = 1
-                self.onFinished?()
-            }
-        }
+        attachObservers(to: item)
         if autoplay {
             player.play()
             isPlaying = true
@@ -179,14 +101,129 @@ final class StreamPlayback: ObservableObject {
     }
 
     deinit {
+        retryWorkItem?.cancel()
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
         }
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
+        if let failObserver {
+            NotificationCenter.default.removeObserver(failObserver)
+        }
+        if let errorLogObserver {
+            NotificationCenter.default.removeObserver(errorLogObserver)
+        }
         statusObserver?.invalidate()
         player.pause()
+    }
+
+    private func attachObservers(to item: AVPlayerItem) {
+        statusObserver?.invalidate()
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        if let failObserver {
+            NotificationCenter.default.removeObserver(failObserver)
+        }
+        if let errorLogObserver {
+            NotificationCenter.default.removeObserver(errorLogObserver)
+        }
+
+        statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.isReady = true
+                    self.playbackError = nil
+                    self.liveRetryCount = 0
+                case .failed:
+                    self.handleItemFailure(item.error)
+                default:
+                    break
+                }
+                let d = item.duration.seconds
+                if d.isFinite, d > 0 {
+                    self.durationLabel = Self.format(d)
+                }
+            }
+        }
+
+        if timeObserver == nil {
+            timeObserver = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+                queue: .main
+            ) { [weak self] time in
+                guard let self else { return }
+                let current = time.seconds
+                let total = self.player.currentItem?.duration.seconds ?? 0
+                if total.isFinite, total > 0 {
+                    self.progress = min(max(current / total, 0), 1)
+                    self.currentLabel = Self.format(current)
+                    self.durationLabel = Self.format(total)
+                }
+                self.isPlaying = self.player.rate > 0
+            }
+        }
+
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            if self.looping {
+                self.player.seek(to: .zero)
+                self.player.play()
+                self.isPlaying = true
+            } else {
+                self.isPlaying = false
+                self.progress = 1
+                self.onFinished?()
+            }
+        }
+
+        failObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] note in
+            let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            self?.handleItemFailure(error ?? item.error)
+        }
+
+        errorLogObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemNewErrorLogEntry,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, let events = item.errorLog()?.events, let last = events.last else { return }
+            let comment = (last.errorComment ?? "") + " \(last.errorStatusCode) \(last.errorDomain)"
+            if Self.isTransientLiveFailure(status: last.errorStatusCode, domain: last.errorDomain, message: comment) {
+                self.handleItemFailure(item.error, logHint: comment)
+            }
+        }
+    }
+
+    private func handleItemFailure(_ error: Error?, logHint: String? = nil) {
+        isReady = false
+        let message = Self.friendlyPlaybackMessage(
+            error,
+            extra: logHint,
+            isLive: isLiveStream
+        )
+        playbackError = message
+        guard isLiveStream, Self.isTransientLiveError(error, extra: logHint), liveRetryCount < 2, let lastURL else {
+            return
+        }
+        liveRetryCount += 1
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.replace(url: lastURL, autoplay: true, isLive: true, isRetry: true)
+        }
+        retryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
     }
 
     private static func format(_ seconds: Double) -> String {
@@ -204,14 +241,69 @@ final class StreamPlayback: ObservableObject {
     private static func makePlayerItem(url: URL, isLive: Bool) -> AVPlayerItem {
         let asset = AVURLAsset(url: url)
         let item = AVPlayerItem(asset: asset)
+        // Avoid ultra-aggressive live-edge chasing — Cloudflare LL-HLS blocking
+        // playlists often return HTTP 204 and AVPlayer fails with CoreMedia -12667.
         if isLive {
             item.preferredForwardBufferDuration = 1
+            item.configuredTimeOffsetFromLive = CMTime(seconds: 1.5, preferredTimescale: 600)
             if #available(iOS 15.0, *) {
                 item.automaticallyPreservesTimeOffsetFromLive = true
                 item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
             }
         }
         return item
+    }
+
+    private static func friendlyPlaybackMessage(_ error: Error?, extra: String?, isLive: Bool) -> String {
+        if isTransientLiveError(error, extra: extra) || (isLive && isGenericOperationFailed(error, extra: extra)) {
+            return "Live stream abhi connect ho raha hai — thodi der baad retry karein"
+        }
+        return error?.localizedDescription ?? "Playback failed"
+    }
+
+    private static func isGenericOperationFailed(_ error: Error?, extra: String?) -> Bool {
+        let text = ((error?.localizedDescription ?? "") + " " + (extra ?? "")).lowercased()
+        return text.contains("operation could not be completed")
+    }
+
+    private static func isTransientLiveError(_ error: Error?, extra: String?) -> Bool {
+        if let error {
+            var cursor: Error? = error
+            while let current = cursor {
+                let ns = current as NSError
+                if isTransientLiveFailure(status: ns.code, domain: ns.domain, message: ns.localizedDescription) {
+                    return true
+                }
+                if let info = ns.userInfo as [String: Any]? {
+                    for value in info.values {
+                        if let nested = value as? Error {
+                            let nestedNS = nested as NSError
+                            if isTransientLiveFailure(status: nestedNS.code, domain: nestedNS.domain, message: nestedNS.localizedDescription) {
+                                return true
+                            }
+                        }
+                        if let number = value as? NSNumber,
+                           isTransientLiveFailure(status: number.intValue, domain: ns.domain, message: "") {
+                            return true
+                        }
+                    }
+                }
+                cursor = ns.userInfo[NSUnderlyingErrorKey] as? Error
+            }
+        }
+        return isTransientLiveFailure(status: 0, domain: "", message: extra ?? "")
+    }
+
+    private static func isTransientLiveFailure(status: Int, domain: String, message: String) -> Bool {
+        let combined = "\(domain) \(message)".lowercased()
+        if status == -12667 || status == 12667 { return true }
+        if status == 204 || combined.contains(" 204") || combined.contains("http 204") || combined.contains("status code 204") {
+            return true
+        }
+        if combined.contains("coremedia") && (combined.contains("12667") || combined.contains("204")) {
+            return true
+        }
+        return false
     }
 }
 

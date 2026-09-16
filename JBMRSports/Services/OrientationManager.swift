@@ -45,14 +45,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         FirebaseApp.configure()
+        Auth.auth().settings?.isAppVerificationDisabledForTesting = false
         FirebaseBootstrap.validateConfiguration()
+        Task {
+            try? await Auth.auth().initializeRecaptchaConfig()
+        }
         DispatchQueue.main.async {
             AuthStore.shared.attachAuthListenerIfNeeded()
             FirebaseRealtime.configure()
         }
         UNUserNotificationCenter.current().delegate = self
         registerForPhoneAuthNotifications(application)
-        configurePhoneAuthForSimulatorIfNeeded()
         return true
     }
 
@@ -61,25 +64,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         application.registerForRemoteNotifications()
     }
 
-    private func configurePhoneAuthForSimulatorIfNeeded() {
-        #if DEBUG
-        #if targetEnvironment(simulator)
-        Auth.auth().settings?.isAppVerificationDisabledForTesting = true
-        NSLog("JBMR Phone Auth: simulator testing mode ON — Firebase test number + fixed OTP use karo")
-        #endif
-        #endif
-    }
-
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        #if DEBUG
-        Auth.auth().setAPNSToken(deviceToken, type: .sandbox)
-        #else
-        Auth.auth().setAPNSToken(deviceToken, type: .prod)
-        #endif
-        NSLog("JBMR APNs token registered for Phone Auth")
+        // Debug = sandbox, App Store = prod. Galat type pe silent push miss + 10s delay.
+        PhoneAuthAPNs.apply(deviceToken)
+        NSLog("JBMR APNs token registered for Phone Auth (%d bytes, type=%@)", deviceToken.count, "\(PhoneAuthAPNs.tokenType.rawValue)")
+        Task { @MainActor in
+            AuthStore.shared.markAPNSReady(token: deviceToken)
+        }
     }
 
     func application(
@@ -87,6 +81,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         NSLog("JBMR APNs registration failed: %@", error.localizedDescription)
+        Task { @MainActor in
+            AuthStore.shared.markAPNSFailed()
+        }
     }
 
     func application(
@@ -100,7 +97,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         Task { @MainActor in
             DeepLinkRouter.shared.handle(url: url)
         }
-        return false
+        return true
     }
 
     func application(
@@ -113,6 +110,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             return
         }
         completionHandler(.noData)
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        if Auth.auth().canHandleNotification(notification.request.content.userInfo) {
+            completionHandler([])
+            return
+        }
+        completionHandler([])
     }
 
     func application(
@@ -129,6 +138,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) -> Bool {
         guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
               let url = userActivity.webpageURL else { return false }
+        if Auth.auth().canHandle(url) {
+            return true
+        }
         Task { @MainActor in
             DeepLinkRouter.shared.handle(url: url)
         }

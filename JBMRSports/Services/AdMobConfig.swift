@@ -2,10 +2,12 @@ import Foundation
 
 enum AdMobConfig {
     /// Production App ID — App Store release se pehle URLScheme.plist mein bhi yahi lagao
-    static let appID = "ca-app-pub-4073629083284169~236964443"
-
-    /// Player ke andar banner (legacy fallback)
+    static let appID = "ca-app-pub-4073629083284169~0236964443"
     static let playerAd = "ca-app-pub-3940256099942544/2934735716"
+
+    static var usesSampleAds: Bool {
+        playerAd.contains("3940256099942544")
+    }
 
     /// IMA VAST video ad tags — pehla fail ho to doosra try hota hai.
     static var playerVideoAdTagURLs: [String] {

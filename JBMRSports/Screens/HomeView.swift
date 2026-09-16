@@ -182,15 +182,32 @@ struct HomeView: View {
 
     private var heroCarousel: some View {
         VStack(spacing: 0) {
-            if featured.isEmpty {
+            if featured.isEmpty && !store.isLoading {
+                VStack(spacing: 12) {
+                    Image(systemName: "sportscourt")
+                        .font(.system(size: 36, weight: .light))
+                        .foregroundStyle(Theme.muted)
+                    Text("No live or upcoming matches right now")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Pull to refresh, or check Schedule for fixtures.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.muted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 220)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Theme.card)
+                )
+                .padding(.horizontal, 16)
+            } else if featured.isEmpty {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Theme.card)
-                    .frame(height: heroCardHeight)
-                    .overlay {
-                        Text("No featured matches")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Theme.muted)
-                    }
+                    .frame(height: 220)
+                    .overlay { ProgressView().tint(Theme.accent) }
             } else {
                 GeometryReader { geo in
                     let cardWidth = min(geo.size.width, 358)

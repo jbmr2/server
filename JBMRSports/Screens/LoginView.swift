@@ -5,8 +5,13 @@ struct LoginView: View {
 
     @State private var mobile = ""
     @State private var otp = ""
+    @State private var pin = ""
     @State private var otpSent = false
+    @State private var loginMethod = "pin"
     @State private var showLegal = false
+    @State private var autoVerifyStarted = false
+    @State private var resendAvailableAt: Date?
+    private let otpResendCooldown: TimeInterval = 120
 
     private let loginBg = Color(red: 8 / 255, green: 9 / 255, blue: 14 / 255)
     private let fieldBG = Color(red: 18 / 255, green: 19 / 255, blue: 26 / 255)
@@ -35,10 +40,12 @@ struct LoginView: View {
             .clipped()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(otpSent ? "Verify OTP" : "Login or Sign Up")
+                Text("Login or Sign Up")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.white)
-                Text(otpSent ? "+91 \(mobile) par OTP bheja gaya" : "Enter your mobile number to get started")
+                Text(loginMethod == "pin"
+                     ? "Sign in with your 10-digit mobile number and 4-digit PIN. New users can use the OTP tab."
+                     : otpStatusText)
                     .font(.system(size: 14))
                     .foregroundStyle(muted)
             }
@@ -46,88 +53,91 @@ struct LoginView: View {
             .padding(.horizontal, 24)
             .padding(.top, 8)
 
+            HStack(spacing: 0) {
+                methodTab("PIN", id: "pin")
+                methodTab("OTP", id: "otp")
+            }
+            .padding(4)
+            .background(fieldBG)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+
             VStack(spacing: 16) {
-                if !otpSent {
-                    HStack(spacing: 12) {
-                        HStack(spacing: 8) {
-                            Text("🇮🇳")
-                                .font(.system(size: 18))
-                            Text("+91")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.white)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.7))
-                        }
-                        Rectangle()
-                            .fill(Color.white.opacity(0.18))
-                            .frame(width: 1, height: 20)
-                        TextField("98765 43210", text: $mobile)
+                if loginMethod == "otp" {
+                    if !otpSent {
+                        phoneField
+                    } else {
+                        TextField("6-digit OTP", text: $otp)
                             .keyboardType(.numberPad)
-                            .textContentType(.telephoneNumber)
-                            .font(.system(size: 15))
+                            .textContentType(.oneTimeCode)
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(.white)
                             .tint(Theme.accent)
-                            .disabled(authStore.isLoading)
-                            .onChange(of: mobile) { _, newValue in
-                                mobile = String(newValue.filter(\.isWholeNumber).prefix(10))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                            .frame(height: 56)
+                            .background(fieldBackground)
+                            .onChange(of: otp) { _, newValue in
+                                otp = String(newValue.filter(\.isWholeNumber).prefix(6))
+                                if otp.count == 6, !authStore.isLoading, !autoVerifyStarted {
+                                    autoVerifyStarted = true
+                                    Task { await submit() }
+                                }
                             }
+
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let remaining = resendSecondsLeft(at: context.date)
+                            HStack {
+                                Button("Change number") {
+                                    otpSent = false
+                                    otp = ""
+                                    autoVerifyStarted = false
+                                    resendAvailableAt = nil
+                                    authStore.resetOTPFlow()
+                                }
+                                Spacer()
+                                Button {
+                                    Task { await resendOTP() }
+                                } label: {
+                                    Text(remaining > 0
+                                         ? "Resend in \(resendClock(remaining))"
+                                         : (authStore.otpSending ? "Sending…" : "Resend OTP"))
+                                }
+                                .disabled(remaining > 0 || authStore.otpSending)
+                                .foregroundStyle(remaining > 0 ? muted : Theme.accent)
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                        }
                     }
-                    .padding(.horizontal, 16)
-                    .frame(height: 56)
-                    .background(fieldBackground)
                 } else {
-                    TextField("6-digit OTP", text: $otp)
+                    phoneField
+                    SecureField("4-digit PIN", text: $pin)
                         .keyboardType(.numberPad)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(.white)
-                        .tint(Theme.accent)
                         .multilineTextAlignment(.center)
-                        .disabled(authStore.isLoading)
                         .padding(.horizontal, 16)
                         .frame(height: 56)
                         .background(fieldBackground)
-                        .onChange(of: otp) { _, newValue in
-                            otp = String(newValue.filter(\.isWholeNumber).prefix(6))
+                        .onChange(of: pin) { _, newValue in
+                            pin = String(newValue.filter(\.isWholeNumber).prefix(4))
                         }
-
-                    Button("Change number") {
-                        otpSent = false
-                        otp = ""
-                        authStore.resetOTPFlow()
-                    }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .disabled(authStore.isLoading)
-
-                    Button("Resend OTP") {
-                        Task {
-                            await authStore.sendOTP(phone: mobile)
-                        }
-                    }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .disabled(authStore.isLoading)
+                    Text("New here? Switch to the OTP tab to create a PIN.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 Button {
-                    Task {
-                        if !otpSent {
-                            otpSent = await authStore.sendOTP(phone: mobile)
-                        } else {
-                            let ok = await authStore.verifyOTP(otp)
-                            if ok { otp = "" }
-                        }
-                    }
+                    Task { await submit() }
                 } label: {
                     Group {
-                        if authStore.isLoading {
-                            ProgressView()
-                                .tint(.white)
+                        if authStore.isLoading || authStore.otpSending {
+                            ProgressView().tint(.white)
                         } else {
-                            Text(otpSent ? "Verify & Continue" : "Get OTP")
+                            Text(primaryTitle)
                                 .font(.system(size: 16, weight: .bold))
                         }
                     }
@@ -141,15 +151,15 @@ struct LoginView: View {
                     .shadow(color: Theme.accent.opacity(0.2), radius: 8, y: 8)
                 }
                 .buttonStyle(.plain)
-                .disabled(authStore.isLoading)
+                .disabled(authStore.isLoading || authStore.otpSending)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 24)
+            .padding(.top, 20)
 
             #if DEBUG
             if authStore.isRunningOnSimulator {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Simulator: real SMS nahi aata. Firebase Console → Authentication → Phone → test number add karo (fixed OTP), ya neeche Dev Login use karo.")
+                    Text("Simulator: SMS is not delivered. Use a Firebase test phone number, or tap Dev Login below.")
                         .font(.system(size: 11))
                         .foregroundStyle(muted)
 
@@ -187,6 +197,108 @@ struct LoginView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(authStore.errorMessage ?? "")
+        }
+        .onAppear {
+            authStore.prepareForOTP()
+            if mobile.isEmpty {
+                mobile = authStore.phone.isEmpty ? authStore.savedPinPhone : authStore.phone
+            }
+        }
+    }
+
+    private var otpStatusText: String {
+        if !otpSent { return "Sign in with PIN, or request an OTP for a new number." }
+        if authStore.otpSending { return "Sending OTP… enter the 6-digit code from SMS." }
+        return "OTP sent to +91 \(mobile)"
+    }
+
+    private var primaryTitle: String {
+        if loginMethod == "pin" { return "Sign in with PIN" }
+        return otpSent ? "Verify & Continue" : "Get OTP"
+    }
+
+    private var phoneField: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Text("🇮🇳")
+                    .font(.system(size: 18))
+                Text("+91")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 1, height: 20)
+            TextField("98765 43210", text: $mobile)
+                .keyboardType(.numberPad)
+                .textContentType(.telephoneNumber)
+                .font(.system(size: 15))
+                .foregroundStyle(.white)
+                .tint(Theme.accent)
+                .disabled(loginMethod == "pin" && authStore.isLoading)
+                .onChange(of: mobile) { _, newValue in
+                    mobile = String(newValue.filter(\.isWholeNumber).prefix(10))
+                }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 56)
+        .background(fieldBackground)
+    }
+
+    private func methodTab(_ title: String, id: String) -> some View {
+        Button {
+            loginMethod = id
+            authStore.clearError()
+        } label: {
+            Text(title)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(loginMethod == id ? .white : muted)
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(loginMethod == id ? Theme.accent : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func submit() async {
+        if loginMethod == "pin" {
+            let ok = await authStore.unlockWithPin(pin, phone: mobile)
+            if !ok { pin = "" }
+            return
+        }
+        if !otpSent {
+            let ok = await authStore.sendOTP(phone: mobile)
+            otpSent = ok
+            if ok { startResendCooldown() }
+            return
+        }
+        let ok = await authStore.verifyOTP(otp)
+        if ok { otp = "" }
+    }
+
+    private func startResendCooldown() {
+        resendAvailableAt = Date().addingTimeInterval(otpResendCooldown)
+    }
+
+    private func resendSecondsLeft(at date: Date = Date()) -> Int {
+        guard let until = resendAvailableAt else { return 0 }
+        return max(0, Int(until.timeIntervalSince(date).rounded(.up)))
+    }
+
+    private func resendClock(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func resendOTP() async {
+        guard resendSecondsLeft() == 0, !authStore.otpSending else { return }
+        otp = ""
+        autoVerifyStarted = false
+        let ok = await authStore.sendOTP(phone: mobile)
+        if ok {
+            startResendCooldown()
         }
     }
 

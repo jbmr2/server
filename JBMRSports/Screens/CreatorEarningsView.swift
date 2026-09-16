@@ -34,11 +34,7 @@ struct CreatorEarningsView: View {
 
     private var profileCard: some View {
         HStack(spacing: 12) {
-            Image("UserAvatar")
-                .resizable()
-                .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 28))
+            ProfileAvatarView(size: 56)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Your Creator Profile")

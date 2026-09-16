@@ -60,7 +60,7 @@ struct FullscreenPlayerView: View {
                 .padding(.bottom, 36)
             }
 
-            if showPlayerAd, store.adsEnabled {
+            if showPlayerAd, store.adsEnabled, !AdMobConfig.usesSampleAds {
                 PlayerVideoAdOverlay(player: playback.player) {
                     withAnimation(.easeOut(duration: 0.2)) {
                         showPlayerAd = false
@@ -74,7 +74,7 @@ struct FullscreenPlayerView: View {
         .persistentSystemOverlays(.hidden)
         .onAppear {
             OrientationManager.enableLandscape()
-            if showAdOnAppear, store.adsEnabled {
+            if showAdOnAppear, store.adsEnabled, !AdMobConfig.usesSampleAds {
                 showPlayerAd = true
             }
         }

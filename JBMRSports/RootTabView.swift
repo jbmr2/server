@@ -26,7 +26,9 @@ struct RootTabView: View {
                         ExploreView(tab: $tab, showSearch: $showSearch, path: $schedulePath)
                     }
                 case .create:
-                    Color.clear
+                    NavigationStack(path: $homePath) {
+                        HomeView(tab: $tab, showSearch: $showSearch, path: $homePath)
+                    }
                 case .shorts:
                     NavigationStack {
                         ShortsView(tab: $tab, showSearch: $showSearch, onClose: {
@@ -41,7 +43,7 @@ struct RootTabView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: tab == .shorts ? 0 : 64)
+                Color.clear.frame(height: 64)
             }
 
             FigmaTabBar(tab: $tab, reelClipCount: reelStore.clips.count, onCreate: {
@@ -182,7 +184,7 @@ struct FigmaTabBar: View {
                 Spacer(minLength: 0)
                 tabButton(.shorts, title: "Shorts", systemImage: "play.rectangle.on.rectangle", activeColor: Theme.magenta)
                 Spacer(minLength: 0)
-                tabButton(.profile, title: "My Reel", systemImage: "person")
+                tabButton(.profile, title: "Profile", systemImage: "person")
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)

@@ -8,7 +8,7 @@ struct JBMRSportsApp: App {
     private let cricketStore = CricketStore.shared
     private let reelStore = ReelStudioStore.shared
     private let downloadLibrary = DownloadLibraryStore.shared
-    private let authStore = AuthStore.shared
+    @ObservedObject private var authStore = AuthStore.shared
     private let userLibrary = UserLibraryStore.shared
     @State private var showSplash = false
 
@@ -50,6 +50,10 @@ struct JBMRSportsApp: App {
                             showSplash = false
                         }
                     }
+                } else if authStore.phase == .needsPinSetup && !screenshotMode {
+                    SetPinView()
+                } else if authStore.phase != .unlocked && !screenshotMode {
+                    LoginView()
                 } else {
                     RootTabView()
                         .environmentObject(cricketStore)
