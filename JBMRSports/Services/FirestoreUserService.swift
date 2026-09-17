@@ -109,6 +109,57 @@ final class FirestoreUserService {
         ], merge: true)
     }
 
+    private static let functionsBase = "https://asia-southeast1-ncrplt20-1c022.cloudfunctions.net"
+
+    func sendTwoFactorOtp(phone: String) async throws -> String {
+        let json = try await postFunction("sendOtp", body: ["phone": phone])
+        guard json["ok"] as? Bool == true, let session = json["sessionId"] as? String, !session.isEmpty else {
+            throw NSError(
+                domain: "JBMROtp",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: (json["error"] as? String) ?? "Couldn’t send OTP — try again"]
+            )
+        }
+        return session
+    }
+
+    func verifyTwoFactorOtp(phone: String, otp: String, sessionId: String) async throws -> String {
+        let json = try await postFunction("verifyOtp", body: [
+            "phone": phone,
+            "otp": otp,
+            "sessionId": sessionId
+        ])
+        guard json["ok"] as? Bool == true, let token = json["token"] as? String, !token.isEmpty else {
+            throw NSError(
+                domain: "JBMROtp",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: (json["error"] as? String) ?? "Incorrect OTP — try again"]
+            )
+        }
+        return token
+    }
+
+    private func postFunction(_ name: String, body: [String: String]) async throws -> [String: Any] {
+        guard let url = URL(string: "\(Self.functionsBase)/\(name)") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 25
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code >= 200 && code < 300 { return json }
+        let message = (json["error"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        throw NSError(
+            domain: "JBMROtp",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: (message?.isEmpty == false ? message! : "Request failed")]
+        )
+    }
+
     func verifyPinLogin(phone: String, pin: String) async throws -> (uid: String, phone: String)? {
         let digits = phone.filter(\.isWholeNumber)
         let pinDigits = pin.filter(\.isWholeNumber)

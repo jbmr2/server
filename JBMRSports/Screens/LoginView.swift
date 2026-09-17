@@ -199,7 +199,6 @@ struct LoginView: View {
             Text(authStore.errorMessage ?? "")
         }
         .onAppear {
-            authStore.prepareForOTP()
             if mobile.isEmpty {
                 mobile = authStore.phone.isEmpty ? authStore.savedPinPhone : authStore.phone
             }

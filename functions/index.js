@@ -7,6 +7,7 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { runOttLiveSync } = require("./ott-sync");
 const { buildOttUsage, renderHtml } = require("./ott-usage");
+const { handleSendOtp, handleVerifyOtp } = require("./otp-2factor");
 
 const SYNC_POLICY = "idle-skip-v2";
 
@@ -97,6 +98,16 @@ function nationalPhone(raw) {
   const digits = String(raw || "").replace(/\D/g, "");
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
+
+exports.sendOtp = onRequest(
+  { cors: true, maxInstances: 20, timeoutSeconds: 30, memory: "256MiB" },
+  handleSendOtp
+);
+
+exports.verifyOtp = onRequest(
+  { cors: true, maxInstances: 20, timeoutSeconds: 30, memory: "256MiB" },
+  handleVerifyOtp
+);
 
 /** Fresh-install PIN login: phone + PIN without OTP when PIN already exists. */
 exports.verifyPinLogin = onRequest(

@@ -1,6 +1,5 @@
-import FirebaseAuth
 import FirebaseCore
-import UIKit
+import Foundation
 
 enum FirebaseBootstrap {
     private static let legacyAdminAppID = "1:692709551364:ios:45bb82655a5626ab45f451"
@@ -28,71 +27,5 @@ enum FirebaseBootstrap {
         }
 
         return nil
-    }
-}
-
-enum PhoneAuthAPNs {
-    /// Xcode Debug on a device uses the development (sandbox) APNs cert. Tagging it as production
-    /// makes silent verification miss, then Firebase shows “I’m not a robot” and SMS is delayed/lost.
-    static var tokenType: AuthAPNSTokenType {
-        #if DEBUG
-        .sandbox
-        #else
-        .prod
-        #endif
-    }
-
-    static func apply(_ token: Data) {
-        Auth.auth().setAPNSToken(token, type: tokenType)
-    }
-}
-
-final class PhoneAuthUIDelegate: NSObject, AuthUIDelegate {
-    static let shared = PhoneAuthUIDelegate()
-
-    func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async {
-            guard let host = self.topViewController() else {
-                completion?()
-                return
-            }
-            host.present(viewControllerToPresent, animated: flag, completion: completion)
-        }
-    }
-
-    func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async { [weak self] in
-            self?.topViewController()?.dismiss(animated: flag, completion: completion)
-        }
-    }
-
-    private func topViewController() -> UIViewController? {
-        let scenes = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .filter { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
-
-        for scene in scenes {
-            if let root = scene.windows.first(where: \.isKeyWindow)?.rootViewController {
-                return Self.highestPresented(from: root)
-            }
-        }
-
-        return UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.windows.first?.rootViewController }
-            .first
-            .map { Self.highestPresented(from: $0) }
-    }
-
-    private static func highestPresented(from controller: UIViewController) -> UIViewController {
-        if let presented = controller.presentedViewController {
-            return highestPresented(from: presented)
-        }
-        if let nav = controller as? UINavigationController, let visible = nav.visibleViewController {
-            return highestPresented(from: visible)
-        }
-        if let tab = controller as? UITabBarController, let selected = tab.selectedViewController {
-            return highestPresented(from: selected)
-        }
-        return controller
     }
 }

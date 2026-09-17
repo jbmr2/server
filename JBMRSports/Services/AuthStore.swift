@@ -1,7 +1,6 @@
 import CryptoKit
 import FirebaseAuth
 import Foundation
-import UIKit
 
 enum AuthPhase: Equatable {
     case signedOut
@@ -24,12 +23,9 @@ final class AuthStore: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var otpPending = false
     @Published private(set) var otpSending = false
-    @Published private(set) var apnsReady = false
 
     private var verificationID: String?
     private var authListener: AuthStateDidChangeListenerHandle?
-    private var apnsFailed = false
-    private var lastAPNSToken: Data?
     private var skipLockOnce = false
     private var pinSessionActive = false
     private var pendingLoginPhone = ""
@@ -90,36 +86,6 @@ final class AuthStore: ObservableObject {
         }
     }
 
-    func markAPNSReady(token: Data? = nil) {
-        if let token {
-            lastAPNSToken = token
-            PhoneAuthAPNs.apply(token)
-        }
-        apnsReady = true
-        apnsFailed = false
-    }
-
-    func markAPNSFailed() {
-        apnsFailed = true
-    }
-
-    func prepareForOTP() {
-        if let token = lastAPNSToken {
-            PhoneAuthAPNs.apply(token)
-            apnsReady = true
-            return
-        }
-        UIApplication.shared.registerForRemoteNotifications()
-    }
-
-    private func waitForAPNS(timeoutSeconds: Double) async {
-        if apnsReady { return }
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while !apnsReady && Date() < deadline {
-            try? await Task.sleep(nanoseconds: 80_000_000)
-        }
-    }
-
     var phoneLabel: String {
         let digits = phone.filter(\.isWholeNumber)
         guard digits.count == 10 else { return phone.isEmpty ? "Signed in" : phone }
@@ -140,32 +106,15 @@ final class AuthStore: ObservableObject {
         errorMessage = nil
         defer { otpSending = false }
 
-        prepareForOTP()
-        if lastAPNSToken == nil {
-            await waitForAPNS(timeoutSeconds: 20)
-        }
-
         do {
-            Auth.auth().settings?.isAppVerificationDisabledForTesting = false
-            if let token = lastAPNSToken {
-                PhoneAuthAPNs.apply(token)
-            }
-            let e164 = "+91\(digits)"
-            let id = try await PhoneAuthProvider.provider()
-                .verifyPhoneNumber(e164, uiDelegate: PhoneAuthUIDelegate.shared)
-            guard !id.isEmpty else {
-                errorMessage = "Couldn’t send OTP — check the number and try again"
-                otpPending = false
-                verificationID = nil
-                return false
-            }
-            verificationID = id
+            let session = try await FirestoreUserService.shared.sendTwoFactorOtp(phone: digits)
+            verificationID = session
             otpPending = true
             return true
         } catch {
             otpPending = false
             verificationID = nil
-            errorMessage = friendlyAuthError(error)
+            errorMessage = error.localizedDescription
             NSLog("JBMR sendOTP failed: %@", String(describing: error))
             return false
         }
@@ -194,9 +143,12 @@ final class AuthStore: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let credential = PhoneAuthProvider.provider()
-                .credential(withVerificationID: verificationID, verificationCode: digits)
-            let result = try await Auth.auth().signIn(with: credential)
+            let token = try await FirestoreUserService.shared.verifyTwoFactorOtp(
+                phone: pendingLoginPhone,
+                otp: digits,
+                sessionId: verificationID
+            )
+            let result = try await Auth.auth().signIn(withCustomToken: token)
             do {
                 try await FirestoreUserService.shared.upsertCurrentUser()
             } catch {
@@ -208,7 +160,7 @@ final class AuthStore: ObservableObject {
             otpPending = false
             return true
         } catch {
-            errorMessage = friendlyAuthError(error)
+            errorMessage = error.localizedDescription
             NSLog("JBMR verifyOTP failed: %@", String(describing: error))
             return false
         }
@@ -530,54 +482,5 @@ final class AuthStore: ObservableObject {
         phone = ""
         displayName = "Guest"
         phase = .signedOut
-    }
-
-    private func friendlyAuthError(_ error: Error) -> String {
-        let nsError = error as NSError
-        if let code = AuthErrorCode(rawValue: nsError.code) {
-            switch code {
-            case .invalidPhoneNumber:
-                return "Invalid mobile number"
-            case .invalidVerificationCode:
-                return "Incorrect OTP — try again"
-            case .sessionExpired:
-                return "OTP expired — request a new code"
-            case .tooManyRequests:
-                return "Too many attempts — try again later"
-            case .networkError:
-                return "Network error — check your internet connection"
-            case .webContextCancelled:
-                return "Couldn’t send OTP. Wait a few seconds and tap Get OTP again."
-            case .missingAppCredential, .invalidAppCredential:
-                return "Couldn’t send OTP — wait a few seconds and tap Get OTP again"
-            case .missingClientIdentifier:
-                return "Couldn’t send OTP — tap Get OTP again"
-            case .quotaExceeded:
-                return "SMS limit reached — try again later"
-            case .captchaCheckFailed:
-                return "Couldn’t send OTP — wait a few seconds and tap Get OTP again"
-            case .internalError:
-                #if targetEnvironment(simulator)
-                return "SMS isn’t delivered in Simulator — use a Firebase test number or Dev Login"
-                #else
-                return "Couldn’t send SMS. Check your connection and try again."
-                #endif
-            case .appNotAuthorized:
-                return "This app isn’t authorized for phone sign-in"
-            default:
-                break
-            }
-        }
-        let message = error.localizedDescription
-        if message.localizedCaseInsensitiveContains("billing") {
-            return "Phone sign-in is temporarily unavailable. Try PIN login or try again later."
-        }
-        if message.contains("API_KEY_IOS_APP_BLOCKED")
-            || message.contains("iosBundleId")
-            || message.contains("PERMISSION_DENIED")
-            || nsError.domain.contains("FIRAuthErrorDomain") && message.contains("blocked") {
-            return "Sign-in is blocked for this app build. Please try again later."
-        }
-        return message
     }
 }
