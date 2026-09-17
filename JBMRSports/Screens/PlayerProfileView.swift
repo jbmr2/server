@@ -5,6 +5,7 @@ struct PlayerProfileView: View {
     @Binding var showSearch: Bool
     @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
     @EnvironmentObject private var authStore: AuthStore
+    @State private var confirmDelete = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -34,10 +35,6 @@ struct PlayerProfileView: View {
                     menuNav(icon: "clock.arrow.circlepath", title: "Watch History") {
                         WatchHistoryView(tab: $tab, showSearch: $showSearch)
                     }
-                    menuNav(icon: "arrow.down.circle", title: "Downloads") {
-                        MyLibraryView()
-                            .environmentObject(downloadLibrary)
-                    }
                     menuNav(icon: "video", title: "My Reels") {
                         MyLibraryView()
                             .environmentObject(downloadLibrary)
@@ -66,6 +63,27 @@ struct PlayerProfileView: View {
                         .frame(height: 52)
                     }
                     .buttonStyle(.plain)
+
+                    if !authStore.uid.isEmpty {
+                        Button {
+                            confirmDelete = true
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Theme.liveRed)
+                                    .frame(width: 22)
+                                Text("Delete Account")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.liveRed)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .frame(height: 52)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(authStore.isLoading)
+                    }
                 }
 
                 Text("JBMR Sports OTT \(AppInfo.versionLabel)")
@@ -81,6 +99,14 @@ struct PlayerProfileView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             AppHeader(onAvatar: { tab = .profile }, onSearch: { showSearch = true })
                 .background(Theme.background)
+        }
+        .alert("Delete your account?", isPresented: $confirmDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task { await authStore.deleteAccount() }
+            }
+        } message: {
+            Text("This removes your phone login, PIN, and profile from JBMR Sports. You can create a new account later.")
         }
     }
 

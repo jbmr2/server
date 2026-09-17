@@ -1020,27 +1020,11 @@ struct MatchCenterView: View {
                         ForEach(current.deliveries) { delivery in
                             BallDeliveryCard(
                                 delivery: delivery,
-                                isDownloaded: downloadLibrary.isBallDownloaded(id: delivery.id),
-                                isDownloading: downloadLibrary.downloadingBallIds.contains(delivery.id),
                                 isInReel: reelStore.contains(id: delivery.id),
                                 liveFallback: canFallBackToLiveStream,
                                 onPlay: {
                                     playBallClipWithAds(delivery)
                                     section = .ballByBall
-                                },
-                                onDownload: {
-                                    guard let remote = delivery.videoURL else {
-                                        downloadLibrary.toastMessage = "Is ball pe video nahi hai"
-                                        return
-                                    }
-                                    Task {
-                                        await downloadLibrary.downloadBall(
-                                            id: delivery.id,
-                                            remoteURL: remote,
-                                            ballLabel: delivery.ballLabel,
-                                            matchTitle: match.vsLabel
-                                        )
-                                    }
                                 },
                                 onAddToReel: { item in
                                     reelStore.toggle(delivery: item, matchTitle: match.vsLabel)
@@ -1521,10 +1505,10 @@ struct BallDeliveryCard: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)
-                if delivery.videoURL != nil || isDownloaded {
-                    Text(isDownloaded ? "Downloaded" : "Video")
+                if delivery.videoURL != nil {
+                    Text("Stream")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(isDownloaded ? Theme.sixGreen : Theme.accent)
+                        .foregroundStyle(Theme.accent)
                 } else if liveFallback {
                     Text("Live")
                         .font(.system(size: 10, weight: .bold))
@@ -1549,22 +1533,24 @@ struct BallDeliveryCard: View {
                 }
                 .buttonStyle(.plain)
 
-                if isDownloaded {
-                    circleIcon("checkmark", tint: Theme.sixGreen)
-                } else if isDownloading {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                        .frame(width: 36, height: 36)
-                } else {
-                    Button {
-                        onDownload?()
-                    } label: {
-                        circleIcon(
-                            "arrow.down.to.line",
-                            tint: delivery.videoURL == nil ? Theme.muted : Theme.accent
-                        )
+                if onDownload != nil {
+                    if isDownloaded {
+                        circleIcon("checkmark", tint: Theme.sixGreen)
+                    } else if isDownloading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .frame(width: 36, height: 36)
+                    } else {
+                        Button {
+                            onDownload?()
+                        } label: {
+                            circleIcon(
+                                "arrow.down.to.line",
+                                tint: delivery.videoURL == nil ? Theme.muted : Theme.accent
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
 
                 Button {

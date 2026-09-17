@@ -157,10 +157,10 @@ struct LegalSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Terms of Use")
                         .font(.system(size: 18, weight: .bold))
-                    Text("JBMR Sports OTT lets you watch live cricket, ball-by-ball clips, and create highlight reels for personal, non-commercial use. Do not copy or redistribute match footage outside this app without rights.")
+                    Text("JBMR Sports is a live cricket OTT app. Watch matches, scores, and highlights in the app. Do not copy or redistribute footage.")
                     Text("Privacy")
                         .font(.system(size: 18, weight: .bold))
-                    Text("Downloads and exported reels stay on this device. Match data is loaded from JBMR’s OTT feed. We do not sell your personal information.")
+                    Text("We collect your mobile number (SMS OTP via 2Factor), optional 4-digit PIN and display name in Firebase, and may show ads via Google AdMob. Profile photos stay on this device unless you choose one. We do not sell your personal information. Full policy: jbmrsports.com/privacy")
                 }
                 .font(.system(size: 14))
                 .foregroundStyle(.white)
@@ -186,9 +186,9 @@ struct ReelGuideSheet: View {
         NavigationStack {
             List {
                 Label("Match → Ball by Ball → + to add clips", systemImage: "plus.circle")
-                Label("Download icon saves the ball offline", systemImage: "arrow.down.circle")
                 Label("Bottom + opens Reel Studio", systemImage: "plus")
-                Label("Preview, then Export Video Reel", systemImage: "square.and.arrow.up")
+                Label("Preview your reel in the app", systemImage: "play.rectangle")
+                Label("Share a JBMR Sports link — video is not saved to Photos", systemImage: "square.and.arrow.up")
                 Label("Saved reels: Profile → My Reels", systemImage: "person.crop.rectangle.stack")
             }
             .scrollContentBackground(.hidden)

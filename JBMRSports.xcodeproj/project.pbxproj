@@ -273,7 +273,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = JBMRSports/JBMRSports-Debug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 39;
+				CURRENT_PROJECT_VERSION = 40;
 				DEVELOPMENT_TEAM = SJ536RSC6J;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
@@ -282,8 +282,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "JBMR Sports";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save your highlight reels to Photos";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a profile photo";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a profile photo. JBMR Sports does not save match video to Photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
@@ -316,7 +315,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = JBMRSports/JBMRSports.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 39;
+				CURRENT_PROJECT_VERSION = 40;
 				DEVELOPMENT_TEAM = SJ536RSC6J;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
@@ -325,8 +324,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "JBMR Sports";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save your highlight reels to Photos";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a profile photo";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a profile photo. JBMR Sports does not save match video to Photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";

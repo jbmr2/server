@@ -190,6 +190,41 @@ final class AuthStore: ObservableObject {
         applyGuestUser()
     }
 
+    func deleteAccount() async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        let phoneDigits = phone.filter(\.isWholeNumber)
+        do {
+            try await FirestoreUserService.shared.deleteCurrentUserRecords(phone: phoneDigits)
+            if let user = Auth.auth().currentUser {
+                try await user.delete()
+            }
+            clearLocalAccountData()
+            applyGuestUser()
+        } catch {
+            errorMessage = error.localizedDescription
+            NSLog("JBMR deleteAccount: %@", error.localizedDescription)
+        }
+    }
+
+    private func clearLocalAccountData() {
+        pinSessionActive = false
+        verificationID = nil
+        otpPending = false
+        pinDefaults.removeObject(forKey: pinHashKey)
+        pinDefaults.removeObject(forKey: pinUidKey)
+        pinDefaults.removeObject(forKey: pinPhoneKey)
+        pinDefaults.removeObject(forKey: displayNameKey)
+        let digits = phone.filter(\.isWholeNumber)
+        if digits.count == 10 {
+            pinDefaults.removeObject(forKey: Self.phoneHashKey(digits))
+            pinDefaults.removeObject(forKey: Self.phoneUidKey(digits))
+        }
+        pinDefaults.synchronize()
+        clearAvatar()
+    }
+
     @discardableResult
     func savePin(_ pin: String, confirm: String) async -> Bool {
         let digits = pin.filter(\.isWholeNumber)

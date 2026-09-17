@@ -175,11 +175,13 @@ struct ShortReelPage: View {
         }
         .onDisappear { playback.pause() }
         .sheet(isPresented: $showShare) {
-            ShareSheet(items: {
-                var items: [Any] = [clip.caption]
-                if let url = clip.videoURL { items.append(url) }
-                return items
-            }())
+            ShareSheet(items: [
+                MatchDeepLink.shareMessage(
+                    title: clip.caption.isEmpty ? "Watch JBMR Sports cricket" : clip.caption,
+                    url: MatchDeepLink.siteURL()
+                ),
+                MatchDeepLink.siteURL()
+            ])
         }
     }
 }

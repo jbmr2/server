@@ -2,24 +2,12 @@ import SwiftUI
 
 struct MyLibraryView: View {
     @EnvironmentObject private var library: DownloadLibraryStore
-    @State private var segment = 0
     @State private var playingURL: URL?
     @State private var playingTitle = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $segment) {
-                Text("Ball Clips (\(library.ballItems.count))").tag(0)
-                Text("My Reels (\(library.reelItems.count))").tag(1)
-            }
-            .pickerStyle(.segmented)
-            .padding(16)
-
-            if segment == 0 {
-                ballList
-            } else {
-                reelList
-            }
+            reelList
         }
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("My Reels")
@@ -53,43 +41,13 @@ struct MyLibraryView: View {
         }
     }
 
-    private var ballList: some View {
-        Group {
-            if library.ballItems.isEmpty {
-                emptyState(
-                    icon: "arrow.down.circle",
-                    title: "No ball clips yet",
-                    subtitle: "Match → Ball by Ball → download icon"
-                )
-            } else {
-                List {
-                    ForEach(library.ballItems) { item in
-                        libraryRow(
-                            title: item.ballLabel,
-                            subtitle: item.matchTitle,
-                            meta: item.downloadedAt.formatted(date: .abbreviated, time: .shortened),
-                            downloaded: true
-                        ) {
-                            if let url = library.localBallURL(id: item.id) {
-                                playingURL = url
-                                playingTitle = item.ballLabel
-                            }
-                        }
-                        .listRowBackground(Theme.card)
-                    }
-                }
-                .scrollContentBackground(.hidden)
-            }
-        }
-    }
-
     private var reelList: some View {
         Group {
             if library.reelItems.isEmpty {
                 emptyState(
                     icon: "film.stack",
-                    title: "No reels yet",
-                    subtitle: "Reel Studio se export karo — yahan save hoga"
+                    title: "No saved reels",
+                    subtitle: "Create a reel in Reel Studio and preview it in the app. Match video is streamed, not saved to Photos."
                 )
             } else {
                 List {

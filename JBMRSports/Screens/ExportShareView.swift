@@ -6,8 +6,6 @@ struct ExportShareView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var playback: StreamPlayback
     @State private var showShare = false
-    @State private var savedMessage: String?
-    @State private var saving = false
 
     init(result: ReelExportResult) {
         self.result = result
@@ -33,7 +31,13 @@ struct ExportShareView: View {
         .background(Color(red: 0.03, green: 0.035, blue: 0.055).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showShare) {
-            ShareSheet(items: [result.fileURL])
+            ShareSheet(items: [
+                MatchDeepLink.shareMessage(
+                    title: "Watch live cricket on JBMR Sports",
+                    url: MatchDeepLink.siteURL()
+                ),
+                MatchDeepLink.siteURL()
+            ])
         }
         .onAppear { playback.play() }
         .onDisappear { playback.pause() }
@@ -133,7 +137,7 @@ struct ExportShareView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 18, weight: .semibold))
-                    Text("Share via WhatsApp, Instagram…")
+                    Text("Share JBMR Sports link")
                         .font(.system(size: 14, weight: .bold))
                     Spacer()
                 }
@@ -151,36 +155,10 @@ struct ExportShareView: View {
 
     private var actions: some View {
         VStack(spacing: 10) {
-            Button {
-                Task { await saveToGallery() }
-            } label: {
-                HStack(spacing: 8) {
-                    if saving {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    Text(saving ? "Saving…" : "Save to Device Gallery")
-                        .font(.system(size: 14, weight: .heavy))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.06))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.13), lineWidth: 1))
-                )
-            }
-            .buttonStyle(.plain)
-            .disabled(saving)
-
-            if let savedMessage {
-                Text(savedMessage)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-            }
+            Text("Video streams in the app only. You can share a link to JBMR Sports, not a video file.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.muted)
+                .multilineTextAlignment(.center)
 
             Button { dismiss() } label: {
                 Text("Done")
@@ -190,17 +168,5 @@ struct ExportShareView: View {
             }
             .buttonStyle(.plain)
         }
-    }
-
-    private func saveToGallery() async {
-        saving = true
-        savedMessage = nil
-        do {
-            try await ReelGallerySaver.saveVideo(at: result.fileURL)
-            savedMessage = "Gallery me save ho gaya ✓"
-        } catch {
-            savedMessage = error.localizedDescription
-        }
-        saving = false
     }
 }

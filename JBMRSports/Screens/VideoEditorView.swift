@@ -4,7 +4,6 @@ struct VideoEditorView: View {
     let clips: [ReelClipItem]
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: CricketStore
-    @EnvironmentObject private var downloadLibrary: DownloadLibraryStore
     @State private var selectedClipId: String
     @State private var showExport = false
     @State private var exporting = false
@@ -146,7 +145,7 @@ struct VideoEditorView: View {
         guard !exporting else { return }
         exporting = true
         exportProgress = 0
-        exportPhase = "Downloading clips…"
+        exportPhase = "Preparing clips…"
         exportError = nil
 
         Task {
@@ -161,14 +160,13 @@ struct VideoEditorView: View {
                     Task { @MainActor in
                         exportProgress = value
                         if value < 0.5 {
-                            exportPhase = "Downloading & merging…"
+                            exportPhase = "Preparing clips…"
                         } else {
                             exportPhase = "Rendering video…"
                         }
                     }
                 }
                 exportResult = result
-                downloadLibrary.saveExportedReel(result)
                 exporting = false
                 showExport = true
             } catch {

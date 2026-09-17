@@ -14,6 +14,10 @@ enum MatchDeepLink {
         URL(string: "\(customScheme)://match/\(matchId)")!
     }
 
+    static func siteURL() -> URL {
+        URL(string: "https://\(webHost)")!
+    }
+
     static func matchURL(matchId: String) -> URL {
         URL(string: "https://\(webHost)/match/\(matchId)")!
     }

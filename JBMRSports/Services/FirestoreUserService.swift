@@ -109,6 +109,15 @@ final class FirestoreUserService {
         ], merge: true)
     }
 
+    func deleteCurrentUserRecords(phone: String) async throws {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        try await db.collection("users").document(uid).delete()
+        let digits = phone.filter(\.isWholeNumber)
+        if digits.count == 10 {
+            try await db.collection("phonePins").document(digits).delete()
+        }
+    }
+
     private static let functionsBase = "https://asia-southeast1-ncrplt20-1c022.cloudfunctions.net"
 
     func sendTwoFactorOtp(phone: String) async throws -> String {
