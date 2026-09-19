@@ -1,7 +1,6 @@
 /* eslint-disable no-console */
 const path = require("path");
 const express = require("express");
-const cron = require("node-cron");
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getDatabase } = require("firebase-admin/database");
 
@@ -9,6 +8,13 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const { runOttLiveSync, CRICK_API } = require("../../functions/ott-sync");
 const { buildOttUsage, renderHtml } = require("../../functions/ott-usage");
+
+let cron = null;
+try {
+  cron = require("node-cron");
+} catch {
+  cron = null;
+}
 
 const FIREBASE_DATABASE_URL =
   process.env.FIREBASE_DATABASE_URL ||
@@ -234,7 +240,7 @@ app.get("/ott/worker-status", async (req, res) => {
 });
 
 const enableCron = String(process.env.ENABLE_INTERNAL_CRON || "false").toLowerCase() === "true";
-if (enableCron) {
+if (enableCron && cron) {
   cron.schedule("* * * * *", async () => {
     try {
       const db = getDatabase();
@@ -244,6 +250,8 @@ if (enableCron) {
       console.error("ottLiveSync (internal cron) failed", err);
     }
   });
+} else if (enableCron && !cron) {
+  console.warn("ENABLE_INTERNAL_CRON=true but node-cron not installed; skipping internal scheduler");
 }
 
 const port = Number(process.env.PORT || 3000);
